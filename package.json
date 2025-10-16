@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate-pdf": "node scripts/generate-pdf.js"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.911.0",
