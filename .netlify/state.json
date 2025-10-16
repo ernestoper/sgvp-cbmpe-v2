@@ -1,0 +1,20 @@
+{
+	"geolocation": {
+		"data": {
+			"city": "Recife",
+			"country": {
+				"code": "BR",
+				"name": "Brazil"
+			},
+			"subdivision": {
+				"code": "PE",
+				"name": "Pernambuco"
+			},
+			"timezone": "America/Recife",
+			"latitude": -8.0009,
+			"longitude": -34.8687,
+			"postalCode": "53000"
+		},
+		"timestamp": 1760579198211
+	}
+}
