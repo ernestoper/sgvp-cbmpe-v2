@@ -123,6 +123,64 @@ const NovoProcesso = () => {
 
   const normalizePhoneDigits = (input: string) => input.replace(/\D/g, "");
 
+  const sendWhatsAppNotification = async (phone: string, processNumber: string, companyName: string, contactName: string) => {
+    console.log("📱 === ENVIANDO WHATSAPP ===");
+    console.log("Telefone:", phone);
+    console.log("Processo:", processNumber);
+    
+    try {
+      const evolutionApiUrl = import.meta.env.VITE_EVOLUTION_API_URL;
+      const evolutionApiToken = import.meta.env.VITE_EVOLUTION_API_TOKEN;
+      const evolutionInstance = import.meta.env.VITE_EVOLUTION_INSTANCE;
+
+      if (!evolutionApiUrl || !evolutionApiToken || !evolutionInstance) {
+        console.log("⚠️ Configuração do WhatsApp não encontrada, pulando envio");
+        return;
+      }
+
+      const message = `🔥 *CBM-PE - Processo Criado* 🔥
+
+Olá *${contactName}*!
+
+Seu processo foi criado com sucesso:
+
+📋 *Número do Processo:* ${processNumber}
+🏢 *Empresa:* ${companyName}
+📅 *Data:* ${new Date().toLocaleDateString('pt-BR')}
+
+✅ *Próximos passos:*
+• Envie os documentos obrigatórios
+• Acompanhe o status pelo sistema
+• Aguarde o agendamento da vistoria
+
+🌐 *Acesse:* ${window.location.origin}/processo/${processNumber}
+
+*Corpo de Bombeiros Militar de Pernambuco*
+_Sistema SGVP - Gestão de Vistorias_`;
+
+      const response = await fetch(`${evolutionApiUrl}/message/sendText/${evolutionInstance}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': evolutionApiToken,
+        },
+        body: JSON.stringify({
+          number: `55${phone}`, // Adiciona código do Brasil
+          text: message,
+        }),
+      });
+
+      if (response.ok) {
+        console.log("✅ WhatsApp enviado com sucesso!");
+      } else {
+        const error = await response.text();
+        console.error("❌ Erro ao enviar WhatsApp:", error);
+      }
+    } catch (error) {
+      console.error("❌ Erro na função de WhatsApp:", error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -197,9 +255,12 @@ const NovoProcesso = () => {
         responsible_name: "Usuário",
       });
 
+      // Enviar WhatsApp de confirmação
+      await sendWhatsAppNotification(phoneDigits, processNumber, companyName, contactName.trim());
+
       toast({
         title: "Processo criado!",
-        description: `Processo ${processNumber} criado com sucesso.`,
+        description: `Processo ${processNumber} criado com sucesso. WhatsApp enviado!`,
       });
 
       navigate(`/processo/${processId}`);
