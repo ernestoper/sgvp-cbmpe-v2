@@ -180,10 +180,13 @@ const DetalheProcesso = () => {
   };
 
   const fetchProcess = async () => {
+    console.log("🔍 Buscando processo ID:", id);
     try {
       const data = await dynamodb.processes.getById(id!);
+      console.log("✅ Processo encontrado:", data);
       setProcess(data);
     } catch (error: any) {
+      console.error("❌ Erro ao buscar processo:", error);
       toast({
         title: "Erro ao carregar processo",
         description: error.message,
@@ -196,17 +199,21 @@ const DetalheProcesso = () => {
   };
 
   const fetchHistory = async () => {
+    console.log("📜 Buscando histórico do processo:", id);
     try {
       const data = await dynamodb.history.getByProcessId(id!);
+      console.log("✅ Histórico encontrado:", data?.length || 0, "entradas");
       setHistory(data || []);
     } catch (error: any) {
-      console.error("Error fetching history:", error);
+      console.error("❌ Erro ao buscar histórico:", error);
     }
   };
 
   const fetchDocuments = async () => {
+    console.log("📄 Buscando documentos do processo:", id);
     try {
       const data = await dynamodb.documents.getByProcessId(id!);
+      console.log("✅ Documentos encontrados:", data?.length || 0, "documentos");
       setDocuments(data || []);
       if (data && data.length > 0) {
         await fetchVersions(data.map(d => d.id));
@@ -220,7 +227,7 @@ const DetalheProcesso = () => {
         });
       }
     } catch (error: any) {
-      console.error("Error fetching documents:", error);
+      console.error("❌ Erro ao buscar documentos:", error);
     }
   };
 
@@ -305,10 +312,9 @@ const DetalheProcesso = () => {
         const ext = f.name.split(".").pop();
         const ts = Date.now();
         const path = `${id}/${ts}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from("process-documents")
-          .upload(path, f, { cacheControl: "3600", upsert: false });
-        if (uploadError) throw uploadError;
+        // Upload usando nosso sistema S3
+        const { storage } = await import("@/lib/storage");
+        const fileUrl = await storage.upload(f, `process-documents/${id}`);
         const docType =
           f.type.startsWith("image/") ? "imagem" :
           f.type === "application/pdf" ? "pdf" :
@@ -318,23 +324,15 @@ const DetalheProcesso = () => {
           process_id: id,
           document_name: f.name,
           document_type: docType,
-          file_url: path,
+          file_url: fileUrl,
           status: "pending",
         } as any;
         const payloadWithStage = {
           ...payloadBase,
           stage: process?.current_status || "cadastro",
         };
-        let { error: dbErr } = await supabase
-          .from("process_documents")
-          .insert(payloadWithStage);
-        if (dbErr) {
-          // Fallback: tenta sem a coluna stage, para compatibilidade com bancos sem a migration aplicada
-          const { error: dbErr2 } = await supabase
-            .from("process_documents")
-            .insert(payloadBase);
-          if (dbErr2) throw dbErr2;
-        }
+        // Salvar no DynamoDB
+        await dynamodb.documents.create(payloadWithStage);
         uploaded += 1;
         setUploadProgress(Math.round((uploaded / pendingFiles.length) * 100));
       }
@@ -356,38 +354,22 @@ const DetalheProcesso = () => {
   // Exclusão de documentos removida conforme regras do fluxo.
 
   const handleDownload = async (doc: ProcessDocument) => {
+    console.log("📥 Download documento:", doc.document_name, "URL:", doc.file_url);
     try {
-      // O campo file_url guarda o caminho do objeto. Se for um URL, extrai o path.
-      const path = doc.file_url.startsWith("http")
-        ? (doc.file_url.split("/process-documents/")[1] || doc.file_url)
-        : doc.file_url;
-
-      // Tenta gerar URL assinada (melhor UX)
-      const { data: signed, error: signErr } = await supabase.storage
-        .from('process-documents')
-        .createSignedUrl(path, 60 * 10); // 10 min
-
-      if (!signErr && signed?.signedUrl) {
-        window.open(signed.signedUrl, '_blank');
+      // Se já é uma URL completa do S3, usar diretamente
+      if (doc.file_url.startsWith("https://")) {
+        console.log("🔗 Abrindo URL S3 diretamente:", doc.file_url);
+        window.open(doc.file_url, '_blank');
         return;
       }
 
-      // Fallback: baixar como Blob
-      const { data: fileData, error: dlErr } = await supabase.storage
-        .from('process-documents')
-        .download(path);
-
-      if (dlErr || !fileData) throw dlErr || new Error('Falha ao baixar arquivo');
-
-      const url = URL.createObjectURL(fileData);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = doc.document_name || 'documento';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      // Se não é URL completa, tentar gerar URL assinada
+      const { storage } = await import("@/lib/storage");
+      const signedUrl = await storage.getSignedUrl(doc.file_url);
+      console.log("🔗 URL assinada gerada:", signedUrl);
+      window.open(signedUrl, '_blank');
     } catch (error: any) {
+      console.error("❌ Erro no download:", error);
       toast({
         title: 'Erro ao baixar documento',
         description: error?.message || 'Não foi possível obter o arquivo.',
@@ -397,17 +379,31 @@ const DetalheProcesso = () => {
   };
 
   const openPreviewForDoc = async (doc: ProcessDocument) => {
+    console.log("👁️ Preview documento:", doc.document_name, "URL:", doc.file_url);
     try {
-      const path = doc.file_url.startsWith("http")
-        ? (doc.file_url.split("/process-documents/")[1] || doc.file_url)
-        : doc.file_url;
-      const { data: signed, error } = await supabase.storage
-        .from("process-documents")
-        .createSignedUrl(path, 60 * 10);
-      if (error || !signed?.signedUrl) throw error || new Error("Não foi possível gerar pré-visualização");
+      let previewUrl = doc.file_url;
+
+      // Se já é uma URL completa do S3, usar diretamente
+      if (doc.file_url.startsWith("https://")) {
+        console.log("🔗 Usando URL S3 diretamente para preview:", previewUrl);
+      } else {
+        // Se não é URL completa, construir URL do S3
+        const S3_BUCKET = import.meta.env.VITE_S3_BUCKET || 'cbmpe-documents';
+        const S3_REGION = import.meta.env.VITE_AWS_REGION || 'us-east-1';
+        
+        // Verificar se já tem o prefixo process-documents
+        const key = doc.file_url.startsWith('process-documents/') 
+          ? doc.file_url 
+          : `process-documents/${doc.file_url}`;
+          
+        previewUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+        console.log("🔗 URL S3 construída para preview:", previewUrl);
+      }
+
       const type = doc.document_type === "pdf" || doc.file_url.endsWith(".pdf") ? "pdf" : (doc.document_type === "imagem" || doc.file_url.match(/\.(png|jpg|jpeg)$/i)) ? "image" : "other";
-      setPreviewDoc({ type, url: signed.signedUrl, name: doc.document_name });
+      setPreviewDoc({ type, url: previewUrl, name: doc.document_name });
     } catch (e: any) {
+      console.error("❌ Erro no preview:", e);
       toast({ title: "Erro ao abrir pré-visualização", description: e?.message || "Tente o download.", variant: "destructive" });
     }
   };
@@ -426,6 +422,37 @@ const DetalheProcesso = () => {
       });
     } catch (err) {
       console.error("Falha ao registrar histórico de reenvio", err);
+    }
+  };
+
+  const handleDeleteDocument = async (doc: ProcessDocument) => {
+    console.log("🗑️ Deletando documento:", doc.document_name);
+    
+    if (!confirm(`Tem certeza que deseja apagar o documento "${doc.document_name}"?`)) {
+      return;
+    }
+
+    try {
+      // Deletar do DynamoDB
+      await dynamodb.documents.delete(doc.id);
+      
+      // Adicionar ao histórico
+      await addToHistory(`Documento removido: ${doc.document_name}`);
+      
+      // Atualizar lista de documentos
+      await fetchDocuments();
+      
+      toast({
+        title: "Documento removido",
+        description: `${doc.document_name} foi removido com sucesso.`,
+      });
+    } catch (error: any) {
+      console.error("❌ Erro ao deletar documento:", error);
+      toast({
+        title: "Erro ao remover documento",
+        description: error.message || "Não foi possível remover o documento.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -453,67 +480,17 @@ const DetalheProcesso = () => {
         throw new Error("Arquivo acima de 10MB");
       }
 
-      const ext = resubmitFile.name.split(".").pop();
-      const ts = Date.now();
-      const path = `${id}/${ts}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("process-documents")
-        .upload(path, resubmitFile, { cacheControl: "3600", upsert: false });
-      if (uploadError) throw uploadError;
+      // Upload usando nosso sistema S3
+      const { storage } = await import("@/lib/storage");
+      const fileUrl = await storage.upload(resubmitFile, `process-documents/${id}`);
 
-      // Tenta RPC primeiro para evitar bloqueios de RLS no UPDATE
-      const { error: rpcErr1 } = await supabase.rpc("resubmit_rejected_document", {
-        p_document_id: resubmitDoc.id,
-        p_file_url: path,
-        p_correction_justification: resubmitJustification.trim(),
+      // Atualizar documento no DynamoDB
+      await dynamodb.documents.update(resubmitDoc.id, {
+        file_url: fileUrl,
+        status: "resubmitted",
+        correction_justification: resubmitJustification.trim(),
+        resubmitted_at: new Date().toISOString(),
       });
-      if (rpcErr1) {
-        // Fallback: tentar RPC antiga se existir
-        const { error: rpcErr2 } = await supabase.rpc("resubmit_document", {
-          _doc_id: resubmitDoc.id,
-          _process_id: id,
-          _file_url: path,
-          _justification: resubmitJustification.trim(),
-          _resubmitted_at: new Date().toISOString(),
-        });
-        if (!rpcErr2) {
-          // RPC antiga funcionou, segue fluxo
-        } else {
-        // Fallback para UPDATE direto
-        const { error: updErr } = await supabase
-          .from("process_documents")
-          .update({ 
-            file_url: path, 
-            status: "pending", 
-            rejection_reason: null,
-            correction_justification: resubmitJustification.trim(),
-            resubmitted_at: new Date().toISOString(),
-          })
-          .eq("id", resubmitDoc.id)
-          .eq("process_id", id);
-        if (updErr) {
-          const msg = (updErr as any)?.message || "";
-          const details = (updErr as any)?.details || "";
-          const hint = (updErr as any)?.hint || "";
-          const missingNewCols = ["correction_justification", "resubmitted_at"].some(k => msg.includes(k) || details.includes(k) || hint.includes(k));
-          if (missingNewCols) {
-            // Fallback quando o banco remoto ainda não tem as novas colunas
-            const { error: updErr2 } = await supabase
-              .from("process_documents")
-              .update({ 
-                file_url: path, 
-                status: "pending", 
-                rejection_reason: null,
-              })
-              .eq("id", resubmitDoc.id)
-              .eq("process_id", id);
-            if (updErr2) throw updErr2;
-          } else {
-            throw updErr;
-          }
-        }
-      }
-      }
 
       await addToHistory(`Reenvio de documento: ${resubmitDoc.document_name}. Justificativa: ${resubmitJustification.trim()}`);
 
@@ -867,7 +844,15 @@ const DetalheProcesso = () => {
                           <Download className="w-4 h-4 mr-1" />
                           Baixar
                         </Button>
-                        {/* Exclusão removida para manter rastreabilidade */}
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleDeleteDocument(doc)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Apagar
+                        </Button>
                       </div>
                     </div>
                   ))

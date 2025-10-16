@@ -14,51 +14,91 @@ const mockAuth = {
   },
   
   signInWithPassword: async ({ email, password }: { email: string; password: string }) => {
-    // Mock - em produção, validar com backend
+    console.log('🔐 Mock signInWithPassword:', { email, passwordLength: password.length });
+    
+    // Primeiro verificar usuários hardcoded
     const mockUsers = [
       { id: 'admin-1', email: 'admin@cbm.pe.gov.br', password: 'Admin@CBM2025', full_name: 'Administrador CBMPE', role: 'admin' },
       { id: 'user-1', email: 'usuario@empresa.com', password: 'user123', full_name: 'Usuário Empresa', role: 'user' },
     ];
     
-    const user = mockUsers.find(u => u.email === email && u.password === password);
+    const hardcodedUser = mockUsers.find(u => u.email === email && u.password === password);
     
-    if (user) {
-      const userData = { id: user.id, email: user.email, full_name: user.full_name };
+    if (hardcodedUser) {
+      console.log('✅ Usuário hardcoded encontrado:', hardcodedUser.email);
+      const userData = { id: hardcodedUser.id, email: hardcodedUser.email, full_name: hardcodedUser.full_name };
       localStorage.setItem(AUTH_KEY, JSON.stringify(userData));
-      
-      // Salvar role no localStorage também para consultas rápidas
-      localStorage.setItem(`${AUTH_KEY}_role`, user.role);
+      localStorage.setItem(`${AUTH_KEY}_role`, hardcodedUser.role);
       
       return { data: { user: userData }, error: null };
     }
     
+    // Verificar usuários cadastrados dinamicamente
+    const registeredUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    console.log('🔍 Verificando usuários registrados:', registeredUsers.length);
+    
+    const registeredUser = registeredUsers.find((u: any) => u.email === email && u.password === password);
+    
+    if (registeredUser) {
+      console.log('✅ Usuário registrado encontrado:', registeredUser.email);
+      const userData = { id: registeredUser.id, email: registeredUser.email, full_name: registeredUser.full_name };
+      localStorage.setItem(AUTH_KEY, JSON.stringify(userData));
+      localStorage.setItem(`${AUTH_KEY}_role`, 'user');
+      
+      return { data: { user: userData }, error: null };
+    }
+    
+    console.log('❌ Credenciais inválidas para:', email);
     return { data: { user: null }, error: { message: 'Credenciais inválidas' } };
   },
   
   signUp: async ({ email, password, options }: any) => {
+    console.log('📝 Mock signUp:', { email, options: options?.data });
+    
     const userId = `user-${Date.now()}`;
     const userData = { 
       id: userId, 
       email, 
-      full_name: options?.data?.full_name || email 
+      full_name: options?.data?.full_name || email,
+      user_metadata: options?.data
     };
     
-    // Criar perfil
-    await dynamodb.profiles.create({
-      id: userId,
-      full_name: userData.full_name,
-      cnpj: options?.data?.cnpj || null,
-      company_name: options?.data?.company_name || null,
-    });
-    
-    // Criar role
-    await dynamodb.roles.create({
-      user_id: userId,
-      role: 'user',
-    });
-    
-    localStorage.setItem(AUTH_KEY, JSON.stringify(userData));
-    return { data: { user: userData }, error: null };
+    try {
+      // Salvar usuário na lista de usuários registrados
+      const registeredUsers = JSON.parse(localStorage.getItem('registered_users') || '[]');
+      registeredUsers.push({
+        id: userId,
+        email,
+        password, // Em produção, isso seria hasheado
+        full_name: userData.full_name,
+        cnpj: options?.data?.cnpj,
+        company_name: options?.data?.company_name
+      });
+      localStorage.setItem('registered_users', JSON.stringify(registeredUsers));
+      
+      // Criar perfil no DynamoDB
+      console.log('🏗️ Criando perfil no DynamoDB...');
+      await dynamodb.profiles.create({
+        id: userId,
+        full_name: userData.full_name,
+        cnpj: options?.data?.cnpj || null,
+        company_name: options?.data?.company_name || null,
+      });
+      
+      // Criar role no DynamoDB
+      console.log('🏗️ Criando role no DynamoDB...');
+      await dynamodb.roles.create({
+        user_id: userId,
+        role: 'user',
+      });
+      
+      console.log('✅ Usuário criado com sucesso:', userId);
+      return { data: { user: userData }, error: null };
+      
+    } catch (error: any) {
+      console.error('❌ Erro ao criar usuário:', error);
+      return { data: { user: null }, error: { message: error.message } };
+    }
   },
   
   signOut: async () => {

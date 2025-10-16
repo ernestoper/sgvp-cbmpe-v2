@@ -87,15 +87,28 @@ const LoginUsuario = () => {
     e.preventDefault();
     setLoading(true);
 
+    console.log("=== INICIANDO LOGIN ===");
+    console.log("Email:", loginEmail);
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password: loginPassword,
       });
 
-      if (error) throw error;
+      console.log("Resposta do Supabase:", { data, error });
+      console.log("Data completo:", JSON.stringify(data, null, 2));
+      console.log("Error completo:", JSON.stringify(error, null, 2));
+
+      if (error) {
+        console.error("Erro no login:", error);
+        throw error;
+      }
 
       if (data.user) {
+        console.log("Usuário logado:", data.user);
+        console.log("Email confirmado:", data.user.email_confirmed_at);
+        
         // Check if user is admin using user_roles table
         const { data: roles } = await supabase
           .from("user_roles")
@@ -121,6 +134,11 @@ const LoginUsuario = () => {
         navigate("/dashboard/usuario");
       }
     } catch (error: any) {
+      console.error("=== ERRO NO LOGIN ===");
+      console.error("Código:", error.code);
+      console.error("Mensagem:", error.message);
+      console.error("Detalhes:", error);
+      
       toast({
         title: "Erro no login",
         description: error.message || "Verifique suas credenciais e tente novamente.",
@@ -128,6 +146,7 @@ const LoginUsuario = () => {
       });
     } finally {
       setLoading(false);
+      console.log("=== FIM DO LOGIN ===");
     }
   };
 
@@ -135,7 +154,17 @@ const LoginUsuario = () => {
     e.preventDefault();
     setLoading(true);
 
+    console.log("=== INICIANDO CADASTRO DE USUÁRIO ===");
+    console.log("Dados do formulário:", {
+      email: signupEmail,
+      fullName: signupFullName,
+      cnpj: signupCNPJ,
+      companyName: signupCompanyName,
+      passwordLength: signupPassword.length
+    });
+
     try {
+      console.log("1. Tentando criar usuário no Supabase...");
       const { data, error } = await supabase.auth.signUp({
         email: signupEmail,
         password: signupPassword,
@@ -150,19 +179,38 @@ const LoginUsuario = () => {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Erro no Supabase:", error);
+        throw error;
+      }
+
+      console.log("2. Usuário criado no Supabase com sucesso:", {
+        userId: data.user?.id,
+        email: data.user?.email,
+        metadata: data.user?.user_metadata
+      });
 
       if (data.user) {
+        console.log("3. Exibindo toast de sucesso e redirecionando para login");
         toast({
           title: "Cadastro realizado!",
           description: "Você já pode fazer login no sistema.",
         });
+        
         // Trocar automaticamente para a aba de Login e preencher o e-mail
         setActiveTab("login");
         setLoginEmail(signupEmail);
         setLoginPassword("");
+        
+        console.log("4. Cadastro concluído com sucesso!");
       }
     } catch (error: any) {
+      console.error("=== ERRO NO CADASTRO ===");
+      console.error("Tipo do erro:", typeof error);
+      console.error("Mensagem:", error.message);
+      console.error("Código:", error.code);
+      console.error("Detalhes completos:", error);
+      
       toast({
         title: "Erro no cadastro",
         description: error.message || "Não foi possível criar sua conta.",
@@ -170,6 +218,7 @@ const LoginUsuario = () => {
       });
     } finally {
       setLoading(false);
+      console.log("=== FIM DO PROCESSO DE CADASTRO ===");
     }
   };
 

@@ -18,31 +18,53 @@ const s3Client = USE_S3 ? new S3Client({
 export const storage = {
   // Upload de arquivo
   upload: async (file: File, path: string): Promise<string> => {
+    console.log("📤 === UPLOAD DE ARQUIVO ===");
+    console.log("USE_S3:", USE_S3);
+    console.log("S3_BUCKET:", S3_BUCKET);
+    console.log("Arquivo:", file.name, "Tamanho:", file.size, "bytes");
+    console.log("Path:", path);
+    
     if (USE_S3 && s3Client) {
       // Upload para S3
       const key = `${path}/${Date.now()}-${file.name}`;
+      console.log("🔑 Chave S3:", key);
       
-      // Converter File para ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = new Uint8Array(arrayBuffer);
-      
-      const command = new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: key,
-        Body: buffer,
-        ContentType: file.type,
-      });
-      
-      await s3Client.send(command);
-      
-      // Retornar URL pública
-      return `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+      try {
+        // Converter File para ArrayBuffer
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = new Uint8Array(arrayBuffer);
+        
+        const command = new PutObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: key,
+          Body: buffer,
+          ContentType: file.type,
+        });
+        
+        console.log("🚀 Enviando para S3...");
+        await s3Client.send(command);
+        
+        // Retornar URL pública
+        const publicUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+        console.log("✅ Upload S3 concluído:", publicUrl);
+        return publicUrl;
+      } catch (error) {
+        console.error("❌ Erro no upload S3:", error);
+        throw error;
+      }
     } else {
+      console.log("📝 Usando modo desenvolvimento (base64)");
       // Desenvolvimento: converter para base64 e armazenar no DynamoDB
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
+        reader.onload = () => {
+          console.log("✅ Conversão base64 concluída");
+          resolve(reader.result as string);
+        };
+        reader.onerror = (error) => {
+          console.error("❌ Erro na conversão base64:", error);
+          reject(error);
+        };
         reader.readAsDataURL(file);
       });
     }

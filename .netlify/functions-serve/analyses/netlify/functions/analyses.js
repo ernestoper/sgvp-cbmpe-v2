@@ -66,17 +66,27 @@ var handler = async (event) => {
     const method = event.httpMethod;
     if (method === "GET" && path === "") {
       if (queryParams.id) {
+        if (TABLE_NAME === "profiles") {
+          console.log("\u{1F464} === BUSCANDO PERFIL POR ID ===");
+          console.log("User ID:", queryParams.id);
+        }
         const command2 = new import_lib_dynamodb.GetCommand({
           TableName: TABLE_NAME,
           Key: { id: queryParams.id }
         });
         const result2 = await docClient.send(command2);
         if (!result2.Item) {
+          if (TABLE_NAME === "profiles") {
+            console.log("\u{1F464} Perfil n\xE3o encontrado para ID:", queryParams.id);
+          }
           return {
             statusCode: 404,
             headers,
             body: JSON.stringify({ error: "Item n\xE3o encontrado" })
           };
+        }
+        if (TABLE_NAME === "profiles") {
+          console.log("\u{1F464} Perfil encontrado:", JSON.stringify(result2.Item, null, 2));
         }
         return {
           statusCode: 200,
@@ -149,8 +159,12 @@ var handler = async (event) => {
       };
     }
     if (method === "POST") {
-      console.log("\u{1F4BE} Salvando an\xE1lise...");
+      console.log("\u{1F4BE} Salvando item na tabela:", TABLE_NAME);
       const data = JSON.parse(event.body);
+      if (TABLE_NAME === "profiles") {
+        console.log("\u{1F464} === CRIANDO PERFIL DE USU\xC1RIO ===");
+        console.log("Dados recebidos:", JSON.stringify(data, null, 2));
+      }
       if (!data.id) {
         data.id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       }
@@ -168,7 +182,10 @@ var handler = async (event) => {
           data.updated_at = (/* @__PURE__ */ new Date()).toISOString();
         }
       }
-      console.log("\u{1F4DD} Dados:", { id: data.id, table: TABLE_NAME });
+      console.log("\u{1F4DD} Dados finais:", { id: data.id, table: TABLE_NAME });
+      if (TABLE_NAME === "profiles") {
+        console.log("\u{1F464} Dados do perfil a serem salvos:", JSON.stringify(data, null, 2));
+      }
       const command = new import_lib_dynamodb.PutCommand({
         TableName: TABLE_NAME,
         Item: data
@@ -176,12 +193,15 @@ var handler = async (event) => {
       console.log("\u{1F680} Enviando para DynamoDB...");
       await docClient.send(command);
       console.log("\u2705 Salvo com sucesso!");
+      if (TABLE_NAME === "profiles") {
+        console.log("\u{1F464} === PERFIL CRIADO COM SUCESSO ===");
+      }
       return {
         statusCode: 201,
         headers,
         body: JSON.stringify({
           id: data.id,
-          message: "An\xE1lise criada com sucesso"
+          message: TABLE_NAME === "profiles" ? "Perfil criado com sucesso" : "An\xE1lise criada com sucesso"
         })
       };
     }
@@ -232,17 +252,32 @@ var handler = async (event) => {
         })
       };
     }
-    if (method === "DELETE" && path.startsWith("/")) {
-      const id = path.substring(1);
+    if (method === "DELETE") {
+      let itemId;
+      if (path.startsWith("/") && path.length > 1) {
+        itemId = path.substring(1);
+      } else {
+        const data = JSON.parse(event.body || "{}");
+        itemId = data.id;
+      }
+      if (!itemId) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: "ID \xE9 obrigat\xF3rio para exclus\xE3o" })
+        };
+      }
+      console.log("\u{1F5D1}\uFE0F Deletando item:", itemId, "da tabela:", TABLE_NAME);
       const command = new import_lib_dynamodb.DeleteCommand({
         TableName: TABLE_NAME,
-        Key: { id }
+        Key: { id: itemId }
       });
       await docClient.send(command);
+      console.log("\u2705 Item deletado com sucesso!");
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ message: "An\xE1lise deletada com sucesso" })
+        body: JSON.stringify({ message: `${TABLE_NAME === "process_documents" ? "Documento" : "Item"} deletado com sucesso` })
       };
     }
     return {

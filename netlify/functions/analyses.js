@@ -83,6 +83,11 @@ export const handler = async (event) => {
     if (method === 'GET' && path === '') {
       // Se tiver ID na query string, buscar por ID
       if (queryParams.id) {
+        if (TABLE_NAME === 'profiles') {
+          console.log('👤 === BUSCANDO PERFIL POR ID ===');
+          console.log('User ID:', queryParams.id);
+        }
+        
         const command = new GetCommand({
           TableName: TABLE_NAME,
           Key: { id: queryParams.id },
@@ -91,11 +96,18 @@ export const handler = async (event) => {
         const result = await docClient.send(command);
         
         if (!result.Item) {
+          if (TABLE_NAME === 'profiles') {
+            console.log('👤 Perfil não encontrado para ID:', queryParams.id);
+          }
           return {
             statusCode: 404,
             headers,
             body: JSON.stringify({ error: 'Item não encontrado' }),
           };
+        }
+        
+        if (TABLE_NAME === 'profiles') {
+          console.log('👤 Perfil encontrado:', JSON.stringify(result.Item, null, 2));
         }
         
         return {
@@ -188,8 +200,14 @@ export const handler = async (event) => {
 
     // POST /api/analyses - Criar nova análise
     if (method === 'POST') {
-      console.log('💾 Salvando análise...');
+      console.log('💾 Salvando item na tabela:', TABLE_NAME);
       const data = JSON.parse(event.body);
+      
+      // Log específico para criação de perfil
+      if (TABLE_NAME === 'profiles') {
+        console.log('👤 === CRIANDO PERFIL DE USUÁRIO ===');
+        console.log('Dados recebidos:', JSON.stringify(data, null, 2));
+      }
       
       // Gerar ID se não existir
       if (!data.id) {
@@ -212,7 +230,11 @@ export const handler = async (event) => {
         }
       }
       
-      console.log('📝 Dados:', { id: data.id, table: TABLE_NAME });
+      console.log('📝 Dados finais:', { id: data.id, table: TABLE_NAME });
+      
+      if (TABLE_NAME === 'profiles') {
+        console.log('👤 Dados do perfil a serem salvos:', JSON.stringify(data, null, 2));
+      }
       
       const command = new PutCommand({
         TableName: TABLE_NAME,
@@ -223,12 +245,16 @@ export const handler = async (event) => {
       await docClient.send(command);
       console.log('✅ Salvo com sucesso!');
       
+      if (TABLE_NAME === 'profiles') {
+        console.log('👤 === PERFIL CRIADO COM SUCESSO ===');
+      }
+      
       return {
         statusCode: 201,
         headers,
         body: JSON.stringify({ 
           id: data.id, 
-          message: 'Análise criada com sucesso' 
+          message: TABLE_NAME === 'profiles' ? 'Perfil criado com sucesso' : 'Análise criada com sucesso' 
         }),
       };
     }
@@ -295,21 +321,41 @@ export const handler = async (event) => {
       };
     }
 
-    // DELETE /api/analyses/:id - Deletar análise
-    if (method === 'DELETE' && path.startsWith('/')) {
-      const id = path.substring(1);
+    // DELETE - Deletar item
+    if (method === 'DELETE') {
+      let itemId;
+      
+      // Tentar pegar ID da URL ou do body
+      if (path.startsWith('/') && path.length > 1) {
+        itemId = path.substring(1);
+      } else {
+        // Tentar pegar do body
+        const data = JSON.parse(event.body || '{}');
+        itemId = data.id;
+      }
+      
+      if (!itemId) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'ID é obrigatório para exclusão' }),
+        };
+      }
+      
+      console.log('🗑️ Deletando item:', itemId, 'da tabela:', TABLE_NAME);
       
       const command = new DeleteCommand({
         TableName: TABLE_NAME,
-        Key: { id },
+        Key: { id: itemId },
       });
       
       await docClient.send(command);
+      console.log('✅ Item deletado com sucesso!');
       
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ message: 'Análise deletada com sucesso' }),
+        body: JSON.stringify({ message: `${TABLE_NAME === 'process_documents' ? 'Documento' : 'Item'} deletado com sucesso` }),
       };
     }
 
