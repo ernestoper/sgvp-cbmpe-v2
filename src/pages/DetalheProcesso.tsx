@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shield, ArrowLeft, Upload, FileText, Download, Image as ImageIcon, File as FileIcon, FileSpreadsheet, Eye, Trash2, Paperclip } from "lucide-react";
+import { Shield, ArrowLeft, Upload, FileText, Download, Image as ImageIcon, File as FileIcon, FileSpreadsheet, Eye, Trash2, Paperclip, ShieldCheck, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -124,6 +124,21 @@ const DetalheProcesso = () => {
       fetchProcess();
       fetchHistory();
       fetchDocuments();
+    }
+  }, [id]);
+
+  // Refresh automático quando vem de link externo (WhatsApp)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromNotification = urlParams.get('from') === 'notification';
+    
+    if (fromNotification && id) {
+      // Força refresh dos dados quando vem de notificação
+      setTimeout(() => {
+        fetchProcess();
+        fetchHistory();
+        fetchDocuments();
+      }, 1000);
     }
   }, [id]);
 
@@ -494,6 +509,44 @@ const DetalheProcesso = () => {
 
       await addToHistory(`Reenvio de documento: ${resubmitDoc.document_name}. Justificativa: ${resubmitJustification.trim()}`);
 
+      // Notificar admin sobre correção via WhatsApp (opcional)
+      try {
+        const evolutionApiUrl = import.meta.env.VITE_EVOLUTION_API_URL;
+        const evolutionApiToken = import.meta.env.VITE_EVOLUTION_API_TOKEN;
+        const evolutionInstance = import.meta.env.VITE_EVOLUTION_INSTANCE;
+
+        if (evolutionApiUrl && evolutionApiToken && evolutionInstance) {
+          const adminMessage = `📄 *DOCUMENTO CORRIGIDO* - CBM-PE
+
+🏢 *Empresa:* ${process?.company_name}
+📋 *Processo:* ${process?.process_number}
+📎 *Documento:* ${resubmitDoc.document_name}
+
+💬 *Justificativa:* ${resubmitJustification.trim()}
+
+🔗 *Analisar:* ${window.location.origin}/admin/processo/${id}
+
+⏰ *Aguardando nova análise do bombeiro*`;
+
+          // Enviar para número do admin (configurável)
+          const adminPhone = "5581999999999"; // Configurar número do admin
+          
+          await fetch(`${evolutionApiUrl}/message/sendText/${evolutionInstance}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': evolutionApiToken,
+            },
+            body: JSON.stringify({
+              number: adminPhone,
+              text: adminMessage,
+            }),
+          });
+        }
+      } catch (error) {
+        console.log("Notificação admin opcional falhou:", error);
+      }
+
       toast({ title: "Documento reenviado", description: "Aguardando nova análise do Bombeiro." });
       setResubmitOpen(false);
       setResubmitDoc(null);
@@ -844,20 +897,72 @@ const DetalheProcesso = () => {
                           <Download className="w-4 h-4 mr-1" />
                           Baixar
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => handleDeleteDocument(doc)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          Apagar
-                        </Button>
+                        {/* Regras conforme documento regras.md */}
+                        {doc.status === "rejected" ? (
+                          // Documentos reprovados: botão "Corrigir/Reenviar"
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                              setResubmitDoc(doc);
+                              setResubmitOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          >
+                            <Paperclip className="w-4 h-4 mr-1" />
+                            Corrigir/Reenviar
+                          </Button>
+                        ) : doc.status === "resubmitted" ? (
+                          // Documentos corrigidos/reenviados: aguardando nova análise
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            disabled
+                            className="text-blue-600 cursor-default"
+                          >
+                            <RefreshCw className="w-4 h-4 mr-1" />
+                            Aguardando Análise
+                          </Button>
+                        ) : doc.status === "completed" ? (
+                          // Documentos aprovados: bloqueados
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            disabled
+                            className="text-gray-400 cursor-not-allowed"
+                          >
+                            <ShieldCheck className="w-4 h-4 mr-1" />
+                            Aprovado - Bloqueado
+                          </Button>
+                        ) : (
+                          // Documentos pendentes: podem ser excluídos apenas se etapa não foi aprovada
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleDeleteDocument(doc)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            title="Excluir documento (apenas documentos não aprovados)"
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Excluir
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))
                 )}
               </div>
+              {/* Regras de documentos */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h4 className="font-semibold text-blue-900 mb-2">📋 Regras dos Documentos</h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• <strong>Documentos aprovados</strong>: Ficam bloqueados e não podem ser alterados</li>
+                  <li>• <strong>Documentos reprovados</strong>: Use "Corrigir/Reenviar" para enviar nova versão</li>
+                  <li>• <strong>Documentos pendentes</strong>: Podem ser excluídos antes da análise</li>
+                  <li>• <strong>Após aprovação da etapa</strong>: Todos os documentos ficam bloqueados</li>
+                </ul>
+              </div>
+
               {/* Orientações de envio por etapa */}
               {process && (() => {
                 const guidanceByStage: Record<string, { title: string; bullets: string[] }> = {

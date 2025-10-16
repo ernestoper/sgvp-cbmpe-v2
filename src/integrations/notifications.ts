@@ -38,8 +38,22 @@ function buildApprovedText(stage: string, nextStage: string, processId: string) 
 }
 
 function buildRejectedText(stage: string, reason: string, processId: string) {
-  const link = `${window.location.origin}/processo/${processId}`;
-  return `⚠️ Sua etapa *${capitalize(stage)}* não foi aprovada.\nMotivo: ${reason}.\n\nPor favor, acesse o portal e corrija/reenvie os documentos.\nLink: ${link}\n\n🧯 CBM-PE - Sistema de Vistorias`;
+  const link = `${window.location.origin}/processo/${processId}?from=notification`;
+  return `🚨 *DOCUMENTO REPROVADO* - CBM-PE
+
+📋 *Etapa:* ${capitalize(stage)}
+❌ *Motivo:* ${reason}
+
+🔧 *AÇÃO NECESSÁRIA:*
+• Acesse o link abaixo
+• Clique em "Corrigir/Reenviar" no documento reprovado
+• Envie a versão corrigida com justificativa
+
+🔗 *Acesse agora:* ${link}
+
+⚠️ *Importante:* Seu processo está em exigência até a correção ser aprovada.
+
+🧯 *CBM-PE - Sistema de Vistorias*`;
 }
 
 function buildEmailSubject(stage: string) {
