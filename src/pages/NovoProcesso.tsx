@@ -195,14 +195,17 @@ const NovoProcesso = () => {
 
   // Associação COSCIP-PE para CNAE principal
   useEffect(() => {
-    const code = cnaePrincipal.replace(/\D/g, "");
+    const raw = String(cnaePrincipal || "");
+    const code = raw.replace(/\D/g, "");
+    const parts = raw.split(/\s[-–—]\s/);
+    const descHint = parts.length > 1 ? parts.slice(1).join(" - ").trim() : undefined;
     if (!code || code.length < 4) {
       setCoscipPrincipal(null);
       return;
     }
     let active = true;
     (async () => {
-      const res = await getCOSCIPbyCNAE(code);
+      const res = await getCOSCIPbyCNAE(code, descHint);
       if (!active) return;
       if (res) {
         setCoscipPrincipal({
@@ -228,12 +231,13 @@ const NovoProcesso = () => {
 
   // normaliza categoria de risco para I/II/III/IV
   function normalizeRiskCategory(cat?: string): "I" | "II" | "III" | "IV" | null {
-    const s = String(cat || "").toLowerCase();
+    const s = String(cat || "").toLowerCase().trim();
     if (!s) return null;
-    if (/(^|\s)i(\s|$)/.test(s) || s.includes("risco i") || s.includes("baixo")) return "I";
-    if (/(^|\s)ii(\s|$)/.test(s) || s.includes("risco ii") || s.includes("médio") || s.includes("medio")) return "II";
-    if (/(^|\s)iii(\s|$)/.test(s) || s.includes("risco iii")) return "III";
-    if (/(^|\s)iv(\s|$)/.test(s) || s.includes("risco iv") || s.includes("alto")) return "IV";
+    // Checa categorias mais específicas primeiro e usa limites de palavra para evitar colisão de substrings
+    if (/\brisco\s*iv\b/.test(s) || /(^|\s)iv(\s|$)/.test(s) || s.includes("muito alto") || s.includes("alto risco")) return "IV";
+    if (/\brisco\s*iii\b/.test(s) || /(^|\s)iii(\s|$)/.test(s)) return "III";
+    if (/\brisco\s*ii\b/.test(s) || /(^|\s)ii(\s|$)/.test(s) || s.includes("médio") || s.includes("medio") || s.includes("intermedi")) return "II";
+    if (/\brisco\s*i\b/.test(s) || /(^|\s)i(\s|$)/.test(s) || s.includes("baixo")) return "I";
     return null;
   }
 
@@ -330,14 +334,18 @@ const NovoProcesso = () => {
         coscip_categoria?: string;
         vistoria?: string;
         observacao?: string;
+        taxa?: number;
       }> = [];
       for (const s of cnaesSecundarios) {
-        const code = String(s || "").replace(/\D/g, "");
+        const raw = String(s || "");
+      const code = raw.replace(/\D/g, "");
+      const parts = raw.split(/\s[-–—]\s/);
+      const descHint = parts.length > 1 ? parts.slice(1).join(" - ").trim() : undefined;
         if (!code) continue;
-        const it = await getCOSCIPbyCNAE(code);
+        const it = await getCOSCIPbyCNAE(code, descHint);
         mapped.push({
           cnae: code,
-          descricao_cnae: it?.descricao_cnae,
+          descricao_cnae: it?.descricao_cnae ?? descHint,
           coscip_categoria: it?.coscip_categoria,
           vistoria: it?.vistoria,
           observacao: it?.observacao,
