@@ -33,6 +33,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { StampModal } from "@/components/StampModal";
 
 interface Process {
@@ -117,6 +118,7 @@ const DetalheProcessoAdmin = () => {
   const [process, setProcess] = useState<Process | null>(null);
   const [history, setHistory] = useState<ProcessHistory[]>([]);
   const [documents, setDocuments] = useState<ProcessDocument[]>([]);
+  const [detailsOpen, setDetailsOpen] = useState<boolean>(false);
   
   // Dialog states
   const [actionDialog, setActionDialog] = useState<string | null>(null);
@@ -144,6 +146,8 @@ const DetalheProcessoAdmin = () => {
   const [approverPosto, setApproverPosto] = useState("");
   const [finalParecer, setFinalParecer] = useState("");
   const [finalRejectReason, setFinalRejectReason] = useState("");
+  // Etapa selecionada na timeline (para resumo de status por etapa)
+  const [selectedStage, setSelectedStage] = useState<ProcessStatus>("cadastro");
 
   // Fallback: extrai contato do histórico se colunas não existirem
   const getContactInfo = () => {
@@ -164,14 +168,18 @@ const DetalheProcessoAdmin = () => {
     return { name: name || "", phone: phone || "", email: email || "" };
   };
 
-  // Calcula contadores de documentos
+  // Calcula contadores de documentos (por etapa selecionada na timeline)
   const currentStage = process?.current_status || "cadastro";
-  const stageDocs = documents.filter(d => (d.stage || "cadastro") === currentStage);
-  const approvedCount = stageDocs.filter(d => d.status === "completed").length;
-  const pendingCount = stageDocs.filter(d => d.status === "pending").length;
-  const rejectedCount = stageDocs.filter(d => d.status === "rejected").length;
+  const selectedStageDocs = documents.filter(d => (d.stage || "cadastro") === selectedStage);
+  const approvedCountSelected = selectedStageDocs.filter(d => d.status === "completed").length;
+  const pendingCountSelected = selectedStageDocs.filter(d => d.status === "pending").length;
+  const rejectedCountSelected = selectedStageDocs.filter(d => d.status === "rejected").length;
+  // Documentos da etapa atual do processo (para lógica de aprovação de etapa)
+  const stageDocsCurrent = documents.filter(d => (d.stage || "cadastro") === currentStage);
+  const pendingCountCurrent = stageDocsCurrent.filter(d => d.status === "pending").length;
+  const rejectedCountCurrent = stageDocsCurrent.filter(d => d.status === "rejected").length;
   // Permite aprovar etapa mesmo sem documentos (ex.: triagem sem anexos)
-  const canApproveStage = (stageDocs.length === 0) || (pendingCount === 0 && rejectedCount === 0);
+  const canApproveStage = (stageDocsCurrent.length === 0) || (pendingCountCurrent === 0 && rejectedCountCurrent === 0);
   // Considera certificado final como aprovação de etapa na aprovação final
   const hasFinalCertificate = documents.some(d => d.document_type === "certificado_final" && d.status === "completed");
   // Fallback: considerar histórico de carimbo/liberação mesmo que o status registrado seja 'concluido'
@@ -188,6 +196,13 @@ const DetalheProcessoAdmin = () => {
     || (currentStage === "aprovacao" && (hasFinalCertificate || approvedByStampHistory))
   );
   const canAdvancePhase = stageApproved && process?.current_status !== "concluido";
+
+  // Quando o processo carregar/alterar, sincroniza etapa selecionada com etapa atual
+  useEffect(() => {
+    if (process) {
+      setSelectedStage(process.current_status);
+    }
+  }, [process]);
 
   useEffect(() => {
     if (!roleLoading) {
@@ -252,6 +267,18 @@ const DetalheProcessoAdmin = () => {
       } catch {}
     };
   }, [id, role]);
+
+  // Persistência do estado do bloco de informações (expandido/recolhido)
+  useEffect(() => {
+    if (!process) return;
+    try {
+      const key = `admin:processDetailsOpen:${process.id}`;
+      const saved = localStorage.getItem(key);
+      if (saved !== null) {
+        setDetailsOpen(saved === "true");
+      }
+    } catch {}
+  }, [process]);
 
   const fetchProcess = async () => {
     try {
@@ -991,107 +1018,145 @@ const DetalheProcessoAdmin = () => {
             </div>
           </div>
           <StatusBadge status={process.current_status} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const next = !detailsOpen;
+              setDetailsOpen(next);
+              try {
+                const key = `admin:processDetailsOpen:${process?.id}`;
+                localStorage.setItem(key, String(next));
+              } catch {}
+            }}
+          >
+            <FileText className="w-4 h-4 mr-2" /> {detailsOpen ? "Ocultar Detalhes" : "Ver Detalhes"}
+          </Button>
         </div>
       </header>
 
       {/* Content */}
       <main className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Process Info */}
-            <Card className="p-6">
-              <h2 className="text-xl font-bold mb-4">Informações do Processo</h2>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">CNPJ</p>
-                  <p className="font-medium">{process.cnpj}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Status Atual</p>
-                  <div className="mt-1">
-                    <span className="font-medium capitalize">{process.current_status}</span>
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <p className="text-sm text-muted-foreground">Razão Social / Nome da Empresa</p>
-                  <p className="font-medium">{process.company_name}</p>
-                </div>
-                {(() => {
-                  const contact = getContactInfo();
-                  return (
-                    <>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Nome completo</p>
-                        <p className="font-medium">{contact.name || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Telefone</p>
-                        <p className="font-medium">{contact.phone || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">E-mail</p>
-                        <p className="font-medium">{contact.email || "—"}</p>
-                      </div>
-                    </>
-                  );
-                })()}
-                <div className="md:col-span-2">
-                  <p className="text-sm text-muted-foreground">Endereço</p>
-                  <p className="font-medium">{process.address}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Criado em</p>
-                  <p className="font-medium">
-                    {new Date(process.created_at).toLocaleDateString("pt-BR")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Atualizado em</p>
-                  <p className="font-medium">
-                    {new Date(process.updated_at).toLocaleDateString("pt-BR")}
-                  </p>
-                </div>
+        <div className="space-y-6">
+          {/* Mini cards de Status dos Documentos */}
+          <div className="grid sm:grid-cols-3 gap-3">
+            <Card className="p-4 rounded-2xl shadow-md bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-green-700 dark:text-green-400">✅ Aprovados</span>
+                <span className="text-xl font-bold text-green-700 dark:text-green-400">{approvedCountSelected}</span>
               </div>
             </Card>
-
-            {/* Timeline */}
-            <Card className="p-6">
-              <h2 className="text-xl font-bold mb-4">Timeline do Processo</h2>
-              <ProcessTimeline 
-                currentStatus={process.current_status}
-                history={history}
-                mode="admin"
-                attachments={documents}
-                onPreviewDoc={openPreviewForDoc as any}
-                onDownloadDoc={handleDownload as any}
-              />
+            <Card className="p-4 rounded-2xl shadow-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">⏳ Pendentes</span>
+                <span className="text-xl font-bold text-yellow-700 dark:text-yellow-400">{pendingCountSelected}</span>
+              </div>
+            </Card>
+            <Card className="p-4 rounded-2xl shadow-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-red-700 dark:text-red-400">❌ Reprovados</span>
+                <span className="text-xl font-bold text-red-700 dark:text-red-400">{rejectedCountSelected}</span>
+              </div>
             </Card>
           </div>
 
-          {/* Sidebar */}
+          {/* Main Content */}
           <div className="space-y-6">
-            {/* Status dos Documentos - Card com feedback visual */}
-            <Card className="p-6">
-              <h2 className="text-lg font-bold mb-4">Status dos Documentos</h2>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                  <span className="text-sm font-medium text-green-700 dark:text-green-400">✅ Aprovados</span>
-                  <span className="text-lg font-bold text-green-700 dark:text-green-400">{approvedCount}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                  <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">⏳ Pendentes</span>
-                  <span className="text-lg font-bold text-yellow-700 dark:text-yellow-400">{pendingCount}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
-                  <span className="text-sm font-medium text-red-700 dark:text-red-400">❌ Reprovados</span>
-                  <span className="text-lg font-bold text-red-700 dark:text-red-400">{rejectedCount}</span>
-                </div>
-              </div>
-            </Card>
+            {/* Process Info */}
+            <Collapsible open={detailsOpen} onOpenChange={(open) => {
+              setDetailsOpen(open);
+              try {
+                const key = `admin:processDetailsOpen:${process?.id}`;
+                localStorage.setItem(key, String(open));
+              } catch {}
+            }}>
+              <Card className="p-6 rounded-2xl shadow-md">
+                <h2 className="text-xl font-bold mb-4">Informações do Processo</h2>
+                <CollapsibleContent className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:slide-in-from-top-2 data-[state=closed]:slide-out-to-top-2">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">CNPJ</p>
+                      <p className="font-medium">{process.cnpj}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Status Atual</p>
+                      <div className="mt-1">
+                        <span className="font-medium capitalize">{process.current_status}</span>
+                      </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-muted-foreground">Razão Social / Nome da Empresa</p>
+                      <p className="font-medium">{process.company_name}</p>
+                    </div>
+                    {(() => {
+                      const contact = getContactInfo();
+                      return (
+                        <>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Nome completo</p>
+                            <p className="font-medium">{contact.name || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Telefone</p>
+                            <p className="font-medium">{contact.phone || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">E-mail</p>
+                            <p className="font-medium">{contact.email || "—"}</p>
+                          </div>
+                        </>
+                      );
+                    })()}
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-muted-foreground">Endereço</p>
+                      <p className="font-medium">{process.address}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Criado em</p>
+                      <p className="font-medium">
+                        {new Date(process.created_at).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Atualizado em</p>
+                      <p className="font-medium">
+                        {new Date(process.updated_at).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
 
-            {/* Ações Administrativas */}
-            <Card className="p-6">
+            {/* Timeline */}
+            <ProcessTimeline 
+              currentStatus={process.current_status}
+              history={history}
+              mode="admin"
+              attachments={documents}
+              onPreviewDoc={openPreviewForDoc as any}
+              onDownloadDoc={handleDownload as any}
+              onSelectStage={(status) => setSelectedStage(status)}
+            />
+            {/* Resumo de status da etapa selecionada */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center shadow-sm">
+                <p className="text-sm text-green-600 font-semibold">✅ Aprovados</p>
+                <p className="text-2xl font-bold text-green-700">{approvedCountSelected}</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center shadow-sm">
+                <p className="text-sm text-yellow-600 font-semibold">⏳ Pendentes</p>
+                <p className="text-2xl font-bold text-yellow-700">{pendingCountSelected}</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center shadow-sm">
+                <p className="text-sm text-red-600 font-semibold">❌ Reprovados</p>
+                <p className="text-2xl font-bold text-red-700">{rejectedCountSelected}</p>
+              </div>
+            </div>
+          </div>
+          {/* Ações Administrativas e Documentos abaixo da timeline */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card className="p-6 rounded-2xl shadow-md">
               <h2 className="text-lg font-bold mb-4">Ações Administrativas</h2>
               <div className="space-y-3">
                 {process.current_status === "aprovacao" && (
@@ -1161,9 +1226,9 @@ const DetalheProcessoAdmin = () => {
                           <>
                             <p className="font-medium">Aprove a etapa para liberar o avanço</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {pendingCount > 0 && `${pendingCount} pendente(s)`}
-                              {pendingCount > 0 && rejectedCount > 0 && " • "}
-                              {rejectedCount > 0 && `${rejectedCount} reprovado(s)`}
+                              {pendingCountCurrent > 0 && `${pendingCountCurrent} pendente(s)`}
+                              {pendingCountCurrent > 0 && rejectedCountCurrent > 0 && " • "}
+                              {rejectedCountCurrent > 0 && `${rejectedCountCurrent} reprovado(s)`}
                             </p>
                           </>
                         )}
@@ -1178,16 +1243,15 @@ const DetalheProcessoAdmin = () => {
                   </p>
                 )}
                 
-                {(pendingCount > 0 || rejectedCount > 0) && (
+                {(pendingCountCurrent > 0 || rejectedCountCurrent > 0) && (
                   <p className="text-xs text-muted-foreground text-center p-2 bg-muted/50 rounded">
                     💡 Analise os documentos abaixo para avançar o processo
                   </p>
                 )}
               </div>
             </Card>
-
-            {/* Documents */}
-            <Card className="p-6">
+            {/* Documentos */}
+            <Card className="p-6 rounded-2xl shadow-md">
               <h2 className="text-lg font-bold mb-4">Documentos</h2>
               <div className="space-y-3">
                 {documents.length === 0 ? (
@@ -1321,6 +1385,7 @@ const DetalheProcessoAdmin = () => {
                 )}
               </div>
             </Card>
+          </div>
 
             {/* Upload de Documentos */}
             <DocumentUpload
@@ -1359,7 +1424,6 @@ const DetalheProcessoAdmin = () => {
                 }
               }}
             />
-          </div>
         </div>
       </main>
 

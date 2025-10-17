@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shield, Plus, LogOut, FileText } from "lucide-react";
+import { Plus, LogOut, FileText } from "lucide-react";
+import { AppHeaderLogo } from "@/components/AppHeaderLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -79,15 +80,7 @@ const DashboardUsuario = () => {
       {/* Header */}
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">SGVP - CBM/PE</h1>
-              <p className="text-sm text-muted-foreground">Portal do Cidadão</p>
-            </div>
-          </div>
+          <AppHeaderLogo />
           <Button variant="ghost" onClick={handleLogout}>
             <LogOut className="w-4 h-4 mr-2" />
             Sair
@@ -110,7 +103,7 @@ const DashboardUsuario = () => {
             onClick={() => navigate("/processo/novo")}
           >
             <Plus className="w-5 h-5 mr-2" />
-            Novo Processo
+            Nova Solicitação de Vistoria
           </Button>
         </div>
 

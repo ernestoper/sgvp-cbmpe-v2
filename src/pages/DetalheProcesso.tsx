@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shield, ArrowLeft, Upload, FileText, Download, Image as ImageIcon, File as FileIcon, FileSpreadsheet, Eye, Trash2, Paperclip, ShieldCheck, RefreshCw } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Download, Image as ImageIcon, File as FileIcon, FileSpreadsheet, Eye, Trash2, Paperclip, ShieldCheck, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -98,6 +98,7 @@ const DetalheProcesso = () => {
   const [resubmitting, setResubmitting] = useState(false);
   const [versionsByDoc, setVersionsByDoc] = useState<Record<string, DocumentVersion[]>>({});
   const [hasVersionsTable, setHasVersionsTable] = useState<boolean>(true);
+  const [mostrarDetalhes, setMostrarDetalhes] = useState(false);
 
   // Fallback: extrai contato do histórico se colunas não existirem
   const getContactInfo = () => {
@@ -589,9 +590,11 @@ const DetalheProcesso = () => {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
+            <img
+              src="https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/0014/4626/brand.gif?itok=gRLiGl3R"
+              alt="Corpo de Bombeiro Militar de Pernambuco"
+              className="w-24 h-24 object-contain"
+            />
             <div>
               <h1 className="text-xl font-bold">Processo {process.process_number}</h1>
               <p className="text-sm text-muted-foreground">{process.company_name}</p>
@@ -602,125 +605,84 @@ const DetalheProcesso = () => {
       </header>
 
       {/* Content */}
-      <main className="container mx-auto px-4 py-8 max-w-5xl">
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Process Info */}
-            <Card className="p-6">
-              <h2 className="text-xl font-bold mb-4">Informações do Processo</h2>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">CNPJ</p>
-                  <p className="font-medium">{process.cnpj}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Razão Social / Nome da Empresa</p>
-                  <p className="font-medium">{process.company_name}</p>
-                </div>
-                {(() => {
-                  const contact = getContactInfo();
-                  return (
-                    <>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Nome completo</p>
-                        <p className="font-medium">{contact.name || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Telefone</p>
-                        <p className="font-medium">{contact.phone || "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">E-mail</p>
-                        <p className="font-medium">{contact.email || "—"}</p>
-                      </div>
-                    </>
-                  );
-                })()}
-                <div>
-                  <p className="text-sm text-muted-foreground">Endereço</p>
-                  <p className="font-medium">{process.address}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Criado em</p>
-                    <p className="font-medium">
-                      {new Date(process.created_at).toLocaleDateString("pt-BR")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Atualizado em</p>
-                    <p className="font-medium">
-                      {new Date(process.updated_at).toLocaleDateString("pt-BR")}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </Card>
+      <main className="container mx-auto px-4 py-8 max-w-6xl">
+        {/* Timeline Top Card */}
+        <Card className="p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4">📋 Timeline do Processo</h2>
+          <ProcessTimeline 
+            currentStatus={process.current_status as any}
+            history={history}
+            attachments={documents}
+            mode="user"
+            onPreviewDoc={openPreviewForDoc as any}
+            onDownloadDoc={handleDownload as any}
+          />
+          <h3 className="text-base font-semibold mb-2 text-muted-foreground">
+            Etapa Atual: {(() => {
+              const map: Record<string, string> = {
+                cadastro: "Cadastro",
+                triagem: "Triagem",
+                vistoria: "Vistoria",
+                comissao: "Comissão",
+                aprovacao: "Aprovação Final",
+                concluido: "Concluído",
+                exigencia: "Em Exigência",
+              };
+              return map[process.current_status] || process.current_status;
+            })()}
+          </h3>
+        </Card>
 
-            {/* Timeline */}
-            <Card className="p-6">
-              <h2 className="text-xl font-bold mb-4">Andamento do Processo</h2>
-              <ProcessTimeline 
-                currentStatus={process.current_status as any}
-                history={history}
-                attachments={documents}
-                mode="user"
-                onPreviewDoc={openPreviewForDoc as any}
-                onDownloadDoc={handleDownload as any}
-              />
-            </Card>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Documento Final Aprovado e Liberado */}
-            {documents.some((d) => d.document_type === "certificado_final" && d.status === "completed" && !!d.disponivel_usuario) && (
-              <Card className="p-6 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20">
-                <h2 className="text-lg font-bold mb-2">Documento Aprovado e Carimbado pelo CBM-PE</h2>
-                {(() => {
-                  const finalDoc = documents.find((d) => d.document_type === "certificado_final" && d.status === "completed" && !!d.disponivel_usuario);
-                  if (!finalDoc) return null;
-                  const liberadoEm = finalDoc.data_carimbo ? new Date(finalDoc.data_carimbo).toLocaleString("pt-BR") : null;
-                  return (
+        {/* Two-column grid: Informações + Documentos da Etapa */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Informações do Processo (compacto com Ver mais) */}
+          <Card className="p-4 bg-muted/30 border border-muted-foreground/20 shadow-sm flex flex-col justify-between">
+            <h4 className="font-semibold text-foreground mb-3">📍 Informações do Processo</h4>
+            <div>
+              <p className="text-sm"><strong>Número:</strong> {process.process_number}</p>
+              <p className="text-sm"><strong>Empresa:</strong> {process.company_name}</p>
+              <p className="text-sm flex items-center gap-2"><strong>Status:</strong> <StatusBadge status={process.current_status as any} type="process" /></p>
+              <p className="text-sm"><strong>Última atualização:</strong> {new Date(process.updated_at).toLocaleDateString("pt-BR")}</p>
+              <Button variant="link" className="mt-2 p-0 h-auto text-sm" onClick={() => setMostrarDetalhes(!mostrarDetalhes)}>
+                {mostrarDetalhes ? "Ocultar detalhes" : "Ver detalhes completos"}
+              </Button>
+              {mostrarDetalhes && (
+                <div className="mt-3 text-sm text-muted-foreground space-y-1">
+                  <p><strong>CNPJ:</strong> {process.cnpj}</p>
+                  <p><strong>Endereço:</strong> {process.address}</p>
+                  {(() => { const c = getContactInfo(); return (
                     <>
-                      <p className="text-sm text-muted-foreground mb-2">O certificado final está liberado para download.</p>
-                      {liberadoEm && (
-                        <p className="text-xs text-muted-foreground">Liberado em: {liberadoEm}</p>
-                      )}
-                      {finalDoc.carimbado_por && (
-                        <p className="text-xs text-muted-foreground mb-4">Responsável: {finalDoc.carimbado_por}</p>
-                      )}
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={() => openPreviewForDoc(finalDoc)}>Visualizar Documento Final</Button>
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(finalDoc)}>Baixar Certificado PDF</Button>
-                      </div>
+                      <p><strong>Contato:</strong> {c.name || "—"}</p>
+                      <p><strong>Telefone:</strong> {c.phone || "—"}</p>
+                      <p><strong>E-mail:</strong> {c.email || "—"}</p>
                     </>
-                  );
-                })()}
-              </Card>
-            )}
-            {/* Documents */}
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold">Documentos</h2>
-                {(["cadastro","triagem","vistoria","exigencia"] as string[]).includes(process.current_status) ? (
-                  <Dialog open={uploadOpen} onOpenChange={(open) => {
-                    if (!open) {
-                      // cleanup previews
-                      Object.values(previewUrls).forEach(u => URL.revokeObjectURL(u));
-                      setPreviewUrls({});
-                      setPendingFiles([]);
-                    }
-                    setUploadOpen(open);
-                  }}>
-                    <DialogTrigger asChild>
-                      <Button size="sm">
-                        <Upload className="w-4 h-4 mr-2" />
-                        Enviar
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
+                  ); })()}
+                  <p><strong>Data de Abertura:</strong> {new Date(process.created_at).toLocaleDateString("pt-BR")}</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Documentos da Etapa (filtrados pela etapa atual) */}
+          <Card className="p-4 bg-muted/30 border border-muted-foreground/20 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-foreground">📄 Documentos da Etapa</h4>
+              {(["cadastro","triagem","vistoria","exigencia"] as string[]).includes(process.current_status) ? (
+                <Dialog open={uploadOpen} onOpenChange={(open) => {
+                  if (!open) {
+                    Object.values(previewUrls).forEach(u => URL.revokeObjectURL(u));
+                    setPreviewUrls({});
+                    setPendingFiles([]);
+                  }
+                  setUploadOpen(open);
+                }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Enviar
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Enviar Documento</DialogTitle>
                       <DialogDescription>
@@ -783,239 +745,98 @@ const DetalheProcesso = () => {
                       </DialogFooter>
                     </div>
                   </DialogContent>
-                  </Dialog>
-                ) : (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <Button size="sm" disabled>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Enviar
-                          </Button>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-sm">Envio bloqueado nesta etapa. Aguarde liberação.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                {documents.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Nenhum documento enviado</p>
-                  </div>
-                ) : (
-                  documents.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="w-16 h-16 rounded bg-muted flex items-center justify-center overflow-hidden">
-                        {/* Mini preview */}
-                        {doc.document_type === "imagem" || doc.file_url.match(/\.(png|jpg|jpeg)$/i) ? (
-                          <Button variant="ghost" size="icon" onClick={() => openPreviewForDoc(doc)}>
-                            <ImageIcon className="w-6 h-6 text-muted-foreground" />
-                          </Button>
-                        ) : doc.document_type === "pdf" || doc.file_url.endsWith(".pdf") ? (
-                          <Button variant="ghost" size="icon" onClick={() => openPreviewForDoc(doc)}>
-                            <FileText className="w-6 h-6 text-muted-foreground" />
-                          </Button>
-                        ) : (
-                          <FileIcon className="w-6 h-6 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{doc.document_name}</p>
-                        <p className="text-xs text-muted-foreground">{doc.document_type}</p>
-                        <div className="mt-1">
-                          <StatusBadge status={doc.status as any} type="step" />
-                        </div>
-                        {doc.status === "completed" && (
-                          <p className="text-xs text-green-700 mt-1">✅ Documento aprovado — edição bloqueada</p>
-                        )}
-                        {doc.rejection_reason && (
-                          <p className="text-xs text-red-600 mt-1">
-                            ⚠️ {doc.rejection_reason}
-                          </p>
-                        )}
-                        {/* Histórico de versões */}
-                        {versionsByDoc[doc.id] && versionsByDoc[doc.id].length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-xs font-semibold">Versões do documento</p>
-                            <div className="space-y-1">
-                              {versionsByDoc[doc.id].map((v) => (
-                                <div key={v.id} className="flex items-center justify-between text-xs p-2 bg-muted/50 rounded">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium">v{v.version_number}</span>
-                                    <span className="capitalize">{v.status}</span>
-                                    {v.status === 'rejected' && v.rejection_reason && (
-                                      <span className="text-red-600">— {v.rejection_reason}</span>
-                                    )}
-                                    {v.status === 'pending' && v.correction_justification && (
-                                      <span className="text-amber-700">— Justificativa: {v.correction_justification}</span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Button variant="ghost" size="sm" onClick={() => openPreviewForDoc({ ...doc, file_url: v.file_url })}>
-                                      <Eye className="w-3 h-3 mr-1" /> Ver
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onClick={() => handleDownload({ ...doc, file_url: v.file_url })}>
-                                      <Download className="w-3 h-3 mr-1" /> Baixar
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {doc.status === "rejected" && (
-                          <div className="mt-2">
-                            <Button
-                              size="sm"
-                              onClick={() => { setResubmitDoc(doc); setResubmitOpen(true); }}
-                              disabled={resubmitting}
-                            >
-                              Corrigir e reenviar
-                            </Button>
-                          </div>
-                        )}
-                        {doc.status === "pending" && (
-                          <p className="text-xs text-amber-600 mt-1">⏳ Documento aguardando análise — reenvio desativado</p>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => openPreviewForDoc(doc)}>
-                          <Eye className="w-4 h-4 mr-1" />
-                          Visualizar
+                </Dialog>
+              ) : (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <Button size="sm" disabled>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Enviar
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDownload(doc)}>
-                          <Download className="w-4 h-4 mr-1" />
-                          Baixar
-                        </Button>
-                        {/* Regras conforme documento regras.md */}
-                        {doc.status === "rejected" ? (
-                          // Documentos reprovados: botão "Corrigir/Reenviar"
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => {
-                              setResubmitDoc(doc);
-                              setResubmitOpen(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                          >
-                            <Paperclip className="w-4 h-4 mr-1" />
-                            Corrigir/Reenviar
-                          </Button>
-                        ) : doc.status === "resubmitted" ? (
-                          // Documentos corrigidos/reenviados: aguardando nova análise
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            disabled
-                            className="text-blue-600 cursor-default"
-                          >
-                            <RefreshCw className="w-4 h-4 mr-1" />
-                            Aguardando Análise
-                          </Button>
-                        ) : doc.status === "completed" ? (
-                          // Documentos aprovados: bloqueados
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            disabled
-                            className="text-gray-400 cursor-not-allowed"
-                          >
-                            <ShieldCheck className="w-4 h-4 mr-1" />
-                            Aprovado - Bloqueado
-                          </Button>
-                        ) : (
-                          // Documentos pendentes: podem ser excluídos apenas se etapa não foi aprovada
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            onClick={() => handleDeleteDocument(doc)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            title="Excluir documento (apenas documentos não aprovados)"
-                          >
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            Excluir
-                          </Button>
-                        )}
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              {/* Regras de documentos */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h4 className="font-semibold text-blue-900 mb-2">📋 Regras dos Documentos</h4>
-                <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• <strong>Documentos aprovados</strong>: Ficam bloqueados e não podem ser alterados</li>
-                  <li>• <strong>Documentos reprovados</strong>: Use "Corrigir/Reenviar" para enviar nova versão</li>
-                  <li>• <strong>Documentos pendentes</strong>: Podem ser excluídos antes da análise</li>
-                  <li>• <strong>Após aprovação da etapa</strong>: Todos os documentos ficam bloqueados</li>
-                </ul>
-              </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-sm">Envio bloqueado nesta etapa. Aguarde liberação.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
 
-              {/* Orientações de envio por etapa */}
-              {process && (() => {
-                const guidanceByStage: Record<string, { title: string; bullets: string[] }> = {
-                  cadastro: {
-                    title: "Documentos iniciais obrigatórios",
-                    bullets: [
-                      "Requerimento de Vistoria (formulário padrão CBM-PE, PDF)",
-                      "Comprovante de inscrição no CNPJ (PDF)",
-                      "Documento de identificação do responsável legal (PDF)",
-                      "Comprovante de endereço do estabelecimento (PDF ou imagem)",
-                      "Planta baixa / croqui simplificado do local (PDF)",
-                    ],
-                  },
-                  vistoria: {
-                    title: "Documentos para análise técnica / vistoria",
-                    bullets: [
-                      "ART (CREA/CAU) do responsável técnico vinculada ao projeto (PDF)",
-                      "Projeto técnico de prevenção e combate a incêndio (PPCI) (PDF)",
-                      "Memorial descritivo conforme norma do CBM-PE (PDF)",
-                      "Laudos: SPDA, hidrantes/extintores, sinalização e iluminação de emergência (PDF)",
-                      "Plantas: situação, baixa, cortes e detalhes de sistemas (PDF)",
-                      "Relatório fotográfico do estabelecimento (JPG/PNG)",
-                      "Plano de emergência / brigada, quando aplicável (PDF)",
-                    ],
-                  },
-                  exigencia: {
-                    title: "Correções exigidas nesta etapa",
-                    bullets: [
-                      "Reenvie os documentos reprovados usando ‘Corrigir e reenviar’",
-                      "Inclua uma justificativa clara do atendimento às exigências",
-                      "Atualize as versões dos arquivos e garanta legibilidade",
-                    ],
-                  },
-                };
-                const guidance = guidanceByStage[process.current_status];
-                if (!guidance) return null;
+            {(() => {
+              const documentosEtapa = documents.filter(d => (d.stage || "") === process.current_status);
+              if (documentosEtapa.length === 0) {
                 return (
-                  <div className="mt-4 p-4 bg-muted rounded-lg">
-                    <h4 className="text-sm font-semibold">{guidance.title}</h4>
-                    <ul className="mt-2 list-disc list-inside text-sm text-muted-foreground">
-                      {guidance.bullets.map((b, i) => (
-                        <li key={i}>{b}</li>
-                      ))}
-                    </ul>
-                    <p className="text-xs mt-2 text-muted-foreground">
-                      Formatos aceitos: PDF, JPG, PNG, DOCX, XLSX (máx. 10MB por arquivo). Os itens podem variar conforme atividade e metragem; consulte as normas do CBM-PE.
-                    </p>
-                  </div>
+                  <p className="text-sm text-muted-foreground">Nenhum documento enviado nesta etapa.</p>
                 );
-              })()}
-            </Card>
+              }
+              return (
+                <ul className="divide-y divide-muted-foreground/20">
+                  {documentosEtapa.map((doc) => (
+                    <li key={doc.id} className="flex justify-between items-center py-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="text-primary w-5 h-5" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{doc.document_name}</p>
+                          <p className="text-xs text-muted-foreground capitalize">
+                            {doc.status === 'completed' ? '✅ Aprovado' : doc.status === 'pending' ? '⏳ Em análise' : doc.status === 'rejected' ? '❌ Reprovado' : doc.status === 'resubmitted' ? '🔁 Corrigido/Reenviado' : doc.status}
+                          </p>
+                          {doc.rejection_reason && (
+                            <p className="text-[11px] text-red-600 mt-1">{doc.rejection_reason}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <Button size="sm" variant="outline" onClick={() => openPreviewForDoc(doc)}>
+                          👁️ Ver
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleDownload(doc)}>
+                          ⬇️ Baixar
+                        </Button>
+                        {doc.status === 'rejected' && (
+                          <Button size="sm" variant="destructive" onClick={() => { setResubmitDoc(doc); setResubmitOpen(true); }}>
+                            🔁 Corrigir/Reenviar
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
+          </Card>
+        </div>
 
-            {/* Preview Modal */}
+        {/* Documento Final Aprovado e Liberado */}
+        {documents.some((d) => d.document_type === "certificado_final" && d.status === "completed" && !!d.disponivel_usuario) && (
+          <Card className="p-6 mt-6 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20">
+            <h2 className="text-lg font-bold mb-2">Documento Aprovado e Carimbado pelo CBM-PE</h2>
+            {(() => {
+              const finalDoc = documents.find((d) => d.document_type === "certificado_final" && d.status === "completed" && !!d.disponivel_usuario);
+              if (!finalDoc) return null;
+              const liberadoEm = finalDoc.data_carimbo ? new Date(finalDoc.data_carimbo).toLocaleString("pt-BR") : null;
+              return (
+                <>
+                  <p className="text-sm text-muted-foreground mb-2">O certificado final está liberado para download.</p>
+                  {liberadoEm && (
+                    <p className="text-xs text-muted-foreground">Liberado em: {liberadoEm}</p>
+                  )}
+                  {finalDoc.carimbado_por && (
+                    <p className="text-xs text-muted-foreground mb-4">Responsável: {finalDoc.carimbado_por}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => openPreviewForDoc(finalDoc)}>Visualizar Documento Final</Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDownload(finalDoc)}>Baixar Certificado PDF</Button>
+                  </div>
+                </>
+              );
+            })()}
+          </Card>
+        )}
+
+        {/* Preview Modal */}
             <Dialog open={!!previewDoc} onOpenChange={(open) => !open && setPreviewDoc(null)}>
               <DialogContent className="max-w-3xl">
                 <DialogHeader>
@@ -1072,8 +893,6 @@ const DetalheProcesso = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
       </main>
     </div>
   );

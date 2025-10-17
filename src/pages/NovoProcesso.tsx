@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Shield, ArrowLeft, Building2, FileText, MapPin, Loader2, User, Phone, Mail } from "lucide-react";
+import { AppHeaderLogo } from "@/components/AppHeaderLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +24,18 @@ const NovoProcesso = () => {
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [cnaePrincipal, setCnaePrincipal] = useState("");
+  const [cnaesSecundarios, setCnaesSecundarios] = useState<string[]>([]);
+
+  // Wizard timeline (visual only, não altera o formulário existente)
+  const steps = [
+    { key: "ocupacao", label: "Ocupação" },
+    { key: "taxa", label: "Taxa de Bombeiro" },
+    { key: "endereco", label: "Endereço" },
+    { key: "memorial", label: "Memorial Preliminar" },
+    { key: "documentos", label: "Documentos" },
+  ];
+  const [wizardStep, setWizardStep] = useState(0);
 
   const formatCNPJ = (value: string) => {
     // Remove tudo que não é número
@@ -86,6 +99,57 @@ const NovoProcesso = () => {
         .join(", ");
       
       setAddress(fullAddress);
+
+      // Extract CNAEs (principal and secondary) from API response
+      try {
+        let principalLabel = "";
+        if ((data as any).cnae_fiscal) {
+          const code = String((data as any).cnae_fiscal);
+          const desc =
+            (data as any).descricao_cnae_fiscal ||
+            (data as any).cnae_fiscal_descricao ||
+            "";
+          principalLabel = desc ? `${code} - ${desc}` : code;
+        } else if (Array.isArray((data as any).atividade_principal) && (data as any).atividade_principal.length) {
+          const ap = (data as any).atividade_principal[0];
+          const code = ap.code || ap.codigo || "";
+          const desc = ap.text || ap.descricao || "";
+          principalLabel = code ? (desc ? `${code} - ${desc}` : String(code)) : desc;
+        }
+
+        const secundarias = Array.isArray((data as any).cnaes_secundarios)
+          ? (data as any).cnaes_secundarios.map((item: any) => {
+              const code = item.codigo || item.code || "";
+              const desc = item.descricao || item.text || "";
+              return code ? (desc ? `${code} - ${desc}` : String(code)) : desc;
+            })
+          : Array.isArray((data as any).atividades_secundarias)
+          ? (data as any).atividades_secundarias.map((item: any) => {
+              const code = item.codigo || item.code || "";
+              const desc = item.descricao || item.text || "";
+              return code ? (desc ? `${code} - ${desc}` : String(code)) : desc;
+            })
+          : [];
+
+        setCnaePrincipal(principalLabel);
+        setCnaesSecundarios(secundarias);
+      } catch {}
+
+      // Auto-fill contact email and phone if available
+      try {
+        if ((data as any).email) {
+          setContactEmail((data as any).email);
+        }
+        const rawPhone =
+          (data as any).telefone ||
+          (data as any).ddd_telefone_1 ||
+          (data as any).ddd_telefone_2 ||
+          "";
+        const digits = String(rawPhone).replace(/\D/g, "");
+        if (digits.length >= 10) {
+          setContactPhone(formatPhoneBr(digits));
+        }
+      } catch {}
 
       toast({
         title: "Dados carregados!",
@@ -240,6 +304,8 @@ _Sistema SGVP - Gestão de Vistorias_`;
         contact_name: contactName.trim() || undefined,
         contact_phone: phoneDigits || undefined,
         contact_email: contactEmail.trim() || undefined,
+        cnae_principal: cnaePrincipal || undefined,
+        cnaes_secundarios: cnaesSecundarios,
       };
 
       const result = await dynamodb.processes.create(processData);
@@ -287,20 +353,113 @@ _Sistema SGVP - Gestão de Vistorias_`;
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">Novo Processo</h1>
-              <p className="text-sm text-muted-foreground">Solicite uma vistoria</p>
-            </div>
-          </div>
+          <AppHeaderLogo />
         </div>
       </header>
 
       {/* Content */}
       <main className="container mx-auto px-4 py-8 max-w-3xl">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold">Nova Solicitação de Atestado de Regularidade</h2>
+          <p className="text-muted-foreground">A solicitação e dividida em 5 passos que precisam ser preenchidas.</p>
+        </div>
+        {/* Timeline horizontal dos 5 passos (visual e navegável) */}
+        <Card className="p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <ol className="flex items-center">
+                {steps.map((s, i) => {
+                  const isCompleted = i < wizardStep;
+                  const isCurrent = i === wizardStep;
+                  const circleClasses = isCurrent
+                    ? "bg-primary text-white"
+                    : isCompleted
+                      ? "bg-primary/80 text-white"
+                      : "bg-muted text-muted-foreground";
+                  const labelClasses = isCurrent
+                    ? "text-primary font-medium"
+                    : isCompleted
+                      ? "text-foreground"
+                      : "text-muted-foreground";
+                  return (
+                    <li key={s.key} className="flex items-center">
+                      <button
+                        type="button"
+                        className={`w-8 h-8 rounded-full flex items-center justify-center ${circleClasses}`}
+                        aria-current={isCurrent ? "step" : undefined}
+                        onClick={() => setWizardStep(i)}
+                        title={s.label}
+                      >
+                        {i + 1}
+                      </button>
+                      <span className={`ml-2 ${labelClasses}`}>{s.label}</span>
+                      {i < steps.length - 1 && (
+                        <span className="mx-4 h-px w-16 bg-muted" aria-hidden="true" />
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+            {/* Controles de navegação movidos para o final do formulário */}
+          </div>
+          {/* Resumo das informações já preenchidas (sempre visível) */}
+          <div className="mt-4 grid md:grid-cols-2 gap-3 text-sm">
+            <div className="space-y-1">
+              <p className="text-muted-foreground">CNPJ</p>
+              <p className="font-medium">{cnpj || "—"}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Empresa</p>
+              <p className="font-medium">{companyName || "—"}</p>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <p className="text-muted-foreground">Endereço</p>
+              <p className="font-medium">{address || "—"}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">CNAE principal</p>
+              <p className="font-medium">{cnaePrincipal || "—"}</p>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <p className="text-muted-foreground">CNAEs secundários</p>
+              <p className="font-medium">
+                {cnaesSecundarios.length ? cnaesSecundarios.join(", ") : "—"}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Responsável</p>
+              <p className="font-medium">{contactName || "—"}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Telefone</p>
+              <p className="font-medium">{contactPhone || "—"}</p>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <p className="text-muted-foreground">E-mail</p>
+              <p className="font-medium">{contactEmail || "—"}</p>
+            </div>
+          </div>
+          {/* Navegação da timeline (rodapé do card) */}
+          <div className="mt-4 flex gap-2 justify-end">
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setWizardStep((prev) => Math.max(0, prev - 1))}
+              disabled={wizardStep === 0}
+            >
+              Voltar
+            </Button>
+            <Button
+              type="button"
+              className="bg-gradient-primary"
+              onClick={() => setWizardStep((prev) => Math.min(steps.length - 1, prev + 1))}
+              disabled={wizardStep === steps.length - 1}
+            >
+              Avançar
+            </Button>
+          </div>
+        </Card>
         <Card className="p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* CNPJ Field */}
@@ -337,6 +496,32 @@ _Sistema SGVP - Gestão de Vistorias_`;
               <p className="text-xs text-muted-foreground">
                 Clique em "Buscar Dados" para preencher automaticamente
               </p>
+              <div className="grid md:grid-cols-2 gap-4 text-sm mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="cnae-principal">CNAE principal</Label>
+                  <Input
+                    id="cnae-principal"
+                    placeholder="Ex.: 47.89-0 - Comércio varejista de..."
+                    value={cnaePrincipal}
+                    onChange={(e) => setCnaePrincipal(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="cnaes-secundarios">CNAEs secundários (um por linha)</Label>
+                  <Textarea
+                    id="cnaes-secundarios"
+                    placeholder={"Ex.:\n47.62-0 - Comércio varejista de móveis\n95.12-8 - Reparação de equipamentos"}
+                    value={cnaesSecundarios.join("\n")}
+                    onChange={(e) => {
+                      const lines = e.target.value
+                        .split(/\r?\n/)
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      setCnaesSecundarios(lines);
+                    }}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Company Name */}
@@ -420,22 +605,23 @@ _Sistema SGVP - Gestão de Vistorias_`;
               </div>
             </div>
 
-            {/* Info Box */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="font-semibold text-blue-900 mb-2">
-                📋 Próximos passos
-              </h3>
-              <ul className="text-sm text-blue-800 space-y-1">
-                <li>• Após criar o processo, você poderá enviar documentos</li>
-                <li>• A equipe do CBM-PE fará a análise e vistoria</li>
-                <li>• Você acompanhará todo o andamento pela timeline</li>
-              </ul>
-            </div>
+          {/* Info Box */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-900 mb-2">
+              📋 Próximos passos
+            </h3>
+            <ul className="text-sm text-blue-800 space-y-1">
+              <li>• Após criar o processo, você poderá enviar documentos</li>
+              <li>• A equipe do CBM-PE fará a análise e vistoria</li>
+              <li>• Você acompanhará todo o andamento pela timeline</li>
+            </ul>
+          </div>
 
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              className="w-full bg-gradient-primary"
+
+          {/* Submit Button */}
+          <Button
+            type="submit"
+            className="w-full bg-gradient-primary"
               size="lg"
               disabled={loading}
             >

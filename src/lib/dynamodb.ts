@@ -11,6 +11,8 @@ export interface Process {
   company_name: string;
   cnpj: string;
   address: string;
+  cnae_principal?: string;
+  cnaes_secundarios?: string[];
   current_status: 'cadastro' | 'triagem' | 'vistoria' | 'comissao' | 'aprovacao' | 'concluido' | 'exigencia';
   created_at: string;
   updated_at: string;

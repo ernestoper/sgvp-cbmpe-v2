@@ -58,6 +58,8 @@ interface ProcessTimelineProps {
   // Callbacks para preview e download dos anexos
   onPreviewDoc?: (doc: AttachedDoc) => void;
   onDownloadDoc?: (doc: AttachedDoc) => void;
+  // Callback opcional para seleção de etapa na timeline (admin)
+  onSelectStage?: (status: ProcessStatus) => void;
 }
 
 const timelineSteps: TimelineStep[] = [
@@ -69,7 +71,7 @@ const timelineSteps: TimelineStep[] = [
   { status: "concluido", label: "Concluído", icon: Award },
 ];
 
-export const ProcessTimeline = ({ currentStatus, history = [], className, mode = "user", attachments = [], onPreviewDoc, onDownloadDoc }: ProcessTimelineProps) => {
+export const ProcessTimeline = ({ currentStatus, history = [], className, mode = "user", attachments = [], onPreviewDoc, onDownloadDoc, onSelectStage }: ProcessTimelineProps) => {
   const stageStatuses = timelineSteps.map(s => s.status);
 
   // Quando estiver em exigência, usamos a última etapa registrada no histórico como etapa ativa
@@ -161,10 +163,12 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
     exigencia: "Processo em exigência. Aguardando usuário.",
   };
 
+  const isAdmin = mode === "admin";
+
   return (
     <Card className={cn("p-6", className)}>
       <h3 className="text-lg font-semibold mb-6">Timeline do Processo</h3>
-      
+
       {hasExigencia && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
@@ -176,19 +180,10 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
           </div>
         </div>
       )}
-      
-      <div className="relative">
-        {/* Linha de progresso vertical (desktop) */}
-        <div className="absolute top-8 left-8 w-1 h-[calc(100%-4rem)] bg-border hidden md:block" />
-        <div 
-          className="absolute top-8 left-8 w-1 bg-primary transition-all duration-500 hidden md:block"
-          style={{ 
-            height: `${(activeIndex / (timelineSteps.length - 1)) * 100}%` 
-          }}
-        />
 
-        {/* Etapas */}
-        <div className="md:space-y-8 flex md:flex-col flex-row gap-6 overflow-x-auto pb-2">
+      {/* Timeline horizontal */}
+      <div className={cn("relative pb-4 -mb-2", isAdmin ? "overflow-x-hidden" : "overflow-x-auto snap-x snap-mandatory scroll-smooth")}>
+        <div className={cn("flex items-center px-2", isAdmin ? "gap-4" : "gap-8", !isAdmin && "min-w-max")}>
           {timelineSteps.map((step, index) => {
             const Icon = step.icon;
             const stepStatus = getStepStatus(index);
@@ -201,60 +196,69 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
             const stepAttachments = getStepAttachments(step.status);
             const attachmentsCount = stepAttachments.length;
             const StepContent = (
-              <div className="flex items-start gap-4 relative">
-                {/* Icon Circle */}
+              <div className={cn("relative flex flex-col items-center snap-start", isAdmin ? "min-w-[72px] sm:min-w-[90px] md:min-w-[100px] lg:min-w-[120px]" : "min-w-[120px]")}> 
+                {/* Conector à esquerda (não no primeiro) */}
+                {index > 0 && (
+                  <div
+                    className={cn(
+                      "absolute top-8 h-1",
+                      isAdmin ? "left-[-3rem] w-12 sm:left-[-3.5rem] sm:w-14 md:left-[-4rem] md:w-20" : "left-[-4rem] w-16 md:w-24",
+                      isCompleted ? "bg-green-600" : "bg-muted"
+                    )}
+                  />
+                )}
+
+                {/* Ícone circular */}
                 <div
                   className={cn(
-                    "relative z-10 flex items-center justify-center w-16 h-16 rounded-full transition-all duration-300",
-                    isCompleted && "bg-green-600 text-white shadow-lg",
-                    isCurrent && !isExigencia && "bg-primary text-primary-foreground shadow-lg ring-4 ring-primary/20",
-                    isExigencia && "bg-red-600 text-white shadow-lg ring-4 ring-red-600/20",
-                    !isCompleted && !isCurrent && !isExigencia && "bg-muted text-muted-foreground"
+                    "relative z-10 flex items-center justify-center rounded-full transition-all duration-300 border-2",
+                    isCompleted && "bg-green-600 text-white border-green-600",
+                    isCurrent && !isExigencia && "bg-yellow-500 text-black border-yellow-500 ring-4 ring-yellow-500/30 scale-105",
+                    isExigencia && "bg-red-600 text-white border-red-600 ring-4 ring-red-600/20",
+                    !isCompleted && !isCurrent && !isExigencia && "bg-muted text-muted-foreground border-muted-foreground/20",
+                    isCurrent ? (isAdmin ? "w-14 h-14 md:w-16 md:h-16" : "w-16 h-16") : (isAdmin ? "w-12 h-12 md:w-14 md:h-14" : "w-14 h-14")
                   )}
                 >
-                  {isExigencia ? <AlertCircle className="w-8 h-8" /> : <Icon className="w-8 h-8" />}
+                  {isExigencia ? <AlertCircle className={cn(isCurrent ? (isAdmin ? "w-7 h-7 md:w-8 md:h-8" : "w-8 h-8") : (isAdmin ? "w-6 h-6 md:w-7 md:h-7" : "w-7 h-7"))}/> : <Icon className={cn(isCurrent ? (isAdmin ? "w-7 h-7 md:w-8 md:h-8" : "w-8 h-8") : (isAdmin ? "w-6 h-6 md:w-7 md:h-7" : "w-7 h-7"))} />}
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 pt-3">
+                {/* Título e meta */}
+                <div className="mt-2 text-center">
                   <h4
                     className={cn(
-                      "font-semibold text-lg",
+                      "font-semibold text-sm",
                       (isCompleted || isCurrent || isExigencia) ? "text-foreground" : "text-muted-foreground"
                     )}
                   >
                     {step.label}
-                    {attachmentsCount > 0 && (
-                      <span className="inline-flex items-center text-sm text-muted-foreground ml-2">
-                        <Paperclip className="w-4 h-4 mr-1" />
-                        {attachmentsCount}
-                      </span>
-                    )}
                   </h4>
                   <p className={cn(
-                    "text-sm mt-1",
+                    "text-[12px] mt-1",
                     isExigencia ? "text-red-600 font-medium" : "text-muted-foreground"
                   )}>
-                    {isExigencia && "⚠️ Em exigência"}
-                    {isCurrent && !isExigencia && "🔄 Em andamento"}
-                    {isCompleted && "✅ Concluído"}
-                    {!isCompleted && !isCurrent && !isExigencia && "⏳ Aguardando"}
+                    {isExigencia && "Exigência"}
+                    {isCurrent && !isExigencia && "Em andamento"}
+                    {isCompleted && "Concluído"}
+                    {!isCompleted && !isCurrent && !isExigencia && "Pendente"}
                   </p>
-                  
-                  {stepHistory.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {stepHistory.slice(0, 1).map((h) => (
-                        <div key={h.id} className="text-xs text-muted-foreground">
-                          <p>{new Date(h.created_at).toLocaleDateString("pt-BR")} às {new Date(h.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
-                          {h.responsible_name && <p>Por: {h.responsible_name}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+
                   {attachmentsCount > 0 && (
-                    <p className="text-xs text-muted-foreground mt-2">{attachmentsCount} arquivo(s) anexado(s) nesta etapa — clique para visualizar.</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 inline-flex items-center">
+                      <Paperclip className="w-3 h-3 mr-1" /> {attachmentsCount} anexo(s)
+                    </p>
                   )}
                 </div>
+
+                {/* Conector à direita (não no último) */}
+                {index < timelineSteps.length - 1 && (
+                  <div
+                    className={cn(
+                      "absolute right-[-4rem] top-8 h-1 w-16 md:w-24",
+                      // segment fica verde se esta etapa estiver concluída
+                      isCompleted ? "bg-green-600" : "bg-muted"
+                    )}
+                  />
+                )}
               </div>
             );
 
@@ -266,7 +270,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <DialogTrigger asChild>
-                          <div className="cursor-pointer hover:bg-muted/50 -mx-2 px-2 py-2 rounded-lg transition-colors">
+                          <div className="cursor-pointer hover:opacity-90 transition" onClick={() => onSelectStage?.(step.status)}>
                             {StepContent}
                           </div>
                         </DialogTrigger>
@@ -358,7 +362,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
               <TooltipProvider key={step.status}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div>
+                    <div onClick={() => onSelectStage?.(step.status)}>
                       {StepContent}
                     </div>
                   </TooltipTrigger>
