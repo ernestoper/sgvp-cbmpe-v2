@@ -1,0 +1,26 @@
+[
+  {
+    "cnae": "5611201",
+    "descricao_cnae": "Restaurantes e similares",
+    "coscip_categoria": "Risco II",
+    "vistoria": "Obrigatória",
+    "taxa": 120.00,
+    "observacao": "Necessita sistema de combate a incêndio tipo 2"
+  },
+  {
+    "cnae": "4711302",
+    "descricao_cnae": "Supermercados",
+    "coscip_categoria": "Risco III",
+    "vistoria": "Obrigatória",
+    "taxa": 250.00,
+    "observacao": "Exige PPCI completo e hidrantes"
+  },
+  {
+    "cnae": "8599603",
+    "descricao_cnae": "Treinamento em informática",
+    "coscip_categoria": "Risco I",
+    "vistoria": "Dispensada",
+    "taxa": 0.00,
+    "observacao": "Dispensa vistoria e taxa — segue para emissão"
+  }
+]
