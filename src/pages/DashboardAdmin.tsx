@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Shield, LogOut, FileText, Search, Filter, TrendingUp, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { LogOut, FileText, Search, Filter, TrendingUp, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -145,9 +145,11 @@ const DashboardAdmin = () => {
       <header className="border-b bg-card sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
+              alt="Corpo de Bombeiro Militar de Pernambuco"
+              className="w-20 h-20 object-contain"
+            />
             <div>
               <h1 className="text-xl font-bold">SGVP - CBM/PE</h1>
               <p className="text-sm text-muted-foreground">Painel Administrativo</p>

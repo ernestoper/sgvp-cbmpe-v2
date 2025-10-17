@@ -3,7 +3,7 @@ import { dispatchStatusChange } from "@/integrations/notifications";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shield, ArrowLeft, FileText, Download, Check, X, AlertTriangle, ShieldCheck, Eye, Image as ImageIcon, File as FileIcon } from "lucide-react";
+import { ArrowLeft, FileText, Download, Check, X, AlertTriangle, ShieldCheck, Eye, Image as ImageIcon, File as FileIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -1009,9 +1009,11 @@ const DetalheProcessoAdmin = () => {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
+              alt="Corpo de Bombeiro Militar de Pernambuco"
+              className="w-20 h-20 object-contain"
+            />
             <div>
               <h1 className="text-xl font-bold">Processo {process.process_number}</h1>
               <p className="text-sm text-muted-foreground">{process.company_name}</p>

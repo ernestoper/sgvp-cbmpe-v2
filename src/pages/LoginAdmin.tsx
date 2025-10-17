@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Shield, ArrowLeft, Mail, Lock } from "lucide-react";
+import { ArrowLeft, Mail, Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -76,8 +76,12 @@ const LoginAdmin = () => {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
           </Link>
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 backdrop-blur-sm mb-4">
-            <Shield className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <img 
+              src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
+              alt="Corpo de Bombeiro Militar de Pernambuco"
+              className="w-24 h-24 object-contain"
+            />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Painel Administrativo</h1>
           <p className="text-white/80">Acesso restrito - CBM/PE</p>

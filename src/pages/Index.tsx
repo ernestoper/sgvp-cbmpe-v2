@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shield, User, FileCheck } from "lucide-react";
+import { User, FileCheck } from "lucide-react";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -11,12 +11,14 @@ const Index = () => {
       {/* Background Pattern */}
       <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:60px_60px]" />
       
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-12">
+      <div className="relative z-10 flex flex-col items-center justify-start min-h-screen px-4 pt-8 md:pt-12">
         {/* Logo & Header */}
-        <div className="text-center mb-12 animate-fade-in">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm mb-6 shadow-xl">
-            <Shield className="w-10 h-10 text-white" />
-          </div>
+        <div className="text-center mb-10 animate-fade-in">
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
+            alt="Corpo de Bombeiro Militar de Pernambuco"
+            className="w-56 h-56 md:w-64 md:h-64 object-contain mx-auto mb-6"
+          />
           <h1 className="text-4xl md:text-6xl font-bold text-white mb-4">
             SGVP - CBM/PE
           </h1>

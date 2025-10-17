@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Shield, Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -55,8 +55,12 @@ const SetupAdmin = () => {
     <div className="min-h-screen bg-gradient-hero flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 backdrop-blur-sm mb-4">
-            <Shield className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
+              alt="Corpo de Bombeiro Militar de Pernambuco"
+              className="w-24 h-24 object-contain"
+            />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Configuração Inicial</h1>
           <p className="text-white/80">Criar primeiro usuário administrador</p>

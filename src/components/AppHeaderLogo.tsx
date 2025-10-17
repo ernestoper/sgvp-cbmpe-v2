@@ -4,7 +4,7 @@ export const AppHeaderLogo: React.FC = () => {
   return (
     <div className="flex items-center gap-3">
       <img
-        src="https://d1yjjnpx0p53s8.cloudfront.net/styles/logo-thumbnail/s3/0014/4626/brand.gif?itok=gRLiGl3R"
+        src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
         alt="Corpo de Bombeiro Militar de Pernambuco"
         className="w-24 h-24 object-contain"
       />
