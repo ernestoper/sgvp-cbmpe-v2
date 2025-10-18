@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Shield, ArrowLeft, Mail, Lock, User } from "lucide-react";
+import { ArrowLeft, Mail, Lock, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { motion } from "framer-motion";
 
 const LoginUsuario = () => {
   const navigate = useNavigate();
@@ -223,173 +224,231 @@ const LoginUsuario = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-hero flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link 
-            to="/" 
-            className="inline-flex items-center text-white/90 hover:text-white mb-6 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar
-          </Link>
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 backdrop-blur-sm mb-4">
-            <Shield className="w-8 h-8 text-white" />
+    <div className="min-h-screen bg-white">
+      {/* Hero igual ao da página inicial */}
+      <section className="relative bg-gradient-to-r from-[#0D3C61] to-[#1E5A8A] overflow-hidden">
+        <img
+          src="https://img.freepik.com/fotos-premium/bombeiro-usando-agua-e-extintor-para-lutar_327072-8700.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover opacity-50 md:opacity-60 mix-blend-overlay pointer-events-none select-none"
+          style={{ objectPosition: 'center 8%' }}
+          loading="lazy"
+          decoding="async"
+        />
+        <div className="relative z-10 max-w-6xl mx-auto px-4 py-8 md:py-10">
+          {/* Apenas a coluna esquerda (logo + textos) */}
+          <div className="flex items-center justify-center gap-4 md:gap-6">
+            <motion.img
+              src="https://upload.wikimedia.org/wikipedia/commons/7/7c/NOVO_BRAS%C3%83O_2024_CBMPE.png"
+              alt="Brasão do Corpo de Bombeiros Militar de Pernambuco"
+              className="w-28 h-28 md:w-32 md:h-32 object-contain rounded-full bg-white/95 shadow-sm"
+              loading="lazy"
+              decoding="async"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            />
+            <div className="text-center">
+              <motion.h1
+                className="text-2xl md:text-3xl font-bold text-white"
+                style={{ fontFamily: "Poppins, Inter, sans-serif" }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              >
+                SGVP – CBM/PE
+              </motion.h1>
+              <motion.p
+                className="text-base md:text-lg text-white/90"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
+              >
+                Sistema de Gestão de Vistorias e Processos
+              </motion.p>
+              <motion.p
+                className="text-sm md:text-base text-white/80 mt-1"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }}
+              >
+                Corpo de Bombeiros Militar de Pernambuco
+              </motion.p>
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Portal do Cidadão</h1>
-          <p className="text-white/80">SGVP - CBM/PE</p>
         </div>
+      </section>
 
-        <Card className="p-6 bg-white/95 backdrop-blur-sm">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="signup">Cadastro</TabsTrigger>
-            </TabsList>
+      {/* Seção de login */}
+      <section className="w-full max-w-6xl mx-auto px-4 py-8">
+        <div className="max-w-md mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <Link 
+              to="/" 
+              className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Voltar
+            </Link>
+          </div>
+          <h2 className="text-center text-foreground text-lg md:text-xl font-semibold mb-4">
+            Portal do Cidadão
+          </h2>
 
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">E-mail</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="login-email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      className="pl-10"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      required
-                    />
+          <Card className="p-6 bg-white">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="login">Login</TabsTrigger>
+                <TabsTrigger value="signup">Cadastro</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="login">
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="login-email">E-mail</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="login-email"
+                        type="email"
+                        placeholder="seu@email.com"
+                        className="pl-10"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Senha</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder="••••••••"
-                      className="pl-10"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="login-password">Senha</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="login-password"
+                        type="password"
+                        placeholder="••••••••"
+                        className="pl-10"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <Button
-                  type="submit"
-                  className="w-full bg-gradient-primary"
-                  disabled={loading}
-                >
-                  {loading ? "Entrando..." : "Entrar"}
-                </Button>
-              </form>
-            </TabsContent>
+                  <Button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-[#0D3C61] to-[#1E5A8A] text-white hover:opacity-90 focus:ring-2 focus:ring-[#0D3C61]/40"
+                    disabled={loading}
+                  >
+                    {loading ? "Entrando..." : "Entrar"}
+                  </Button>
+                </form>
+              </TabsContent>
 
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">Nome Completo</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <TabsContent value="signup">
+                <form onSubmit={handleSignup} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-name">Nome Completo</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="Seu nome completo"
+                        className="pl-10"
+                        value={signupFullName}
+                        onChange={(e) => setSignupFullName(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">E-mail</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="seu@email.com"
+                        className="pl-10"
+                        value={signupEmail}
+                        onChange={(e) => setSignupEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-cnpj">CNPJ (opcional)</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="signup-cnpj"
+                        type="text"
+                        placeholder="00.000.000/0000-00"
+                        value={signupCNPJ}
+                        onChange={(e) => handleCNPJChange(e.target.value)}
+                        maxLength={18}
+                      />
+                      <Button
+                        type="button"
+                        onClick={fetchCNPJData}
+                        disabled={loadingCNPJ || signupCNPJ.replace(/\D/g, "").length !== 14}
+                        variant="outline"
+                      >
+                        {loadingCNPJ ? "..." : "Buscar"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Clique em "Buscar" para preencher o nome da empresa
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-company">Nome da Empresa (opcional)</Label>
                     <Input
-                      id="signup-name"
+                      id="signup-company"
                       type="text"
-                      placeholder="Seu nome completo"
-                      className="pl-10"
-                      value={signupFullName}
-                      onChange={(e) => setSignupFullName(e.target.value)}
-                      required
+                      placeholder="Razão social"
+                      value={signupCompanyName}
+                      onChange={(e) => setSignupCompanyName(e.target.value)}
                     />
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">E-mail</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      className="pl-10"
-                      value={signupEmail}
-                      onChange={(e) => setSignupEmail(e.target.value)}
-                      required
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Senha</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="Mínimo 6 caracteres"
+                        className="pl-10"
+                        value={signupPassword}
+                        onChange={(e) => setSignupPassword(e.target.value)}
+                        required
+                        minLength={6}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-cnpj">CNPJ (opcional)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="signup-cnpj"
-                      type="text"
-                      placeholder="00.000.000/0000-00"
-                      value={signupCNPJ}
-                      onChange={(e) => handleCNPJChange(e.target.value)}
-                      maxLength={18}
-                    />
-                    <Button
-                      type="button"
-                      onClick={fetchCNPJData}
-                      disabled={loadingCNPJ || signupCNPJ.replace(/\D/g, "").length !== 14}
-                      variant="outline"
-                    >
-                      {loadingCNPJ ? "..." : "Buscar"}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Clique em "Buscar" para preencher o nome da empresa
-                  </p>
-                </div>
+                  <Button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-[#0D3C61] to-[#1E5A8A] text-white hover:opacity-90 focus:ring-2 focus:ring-[#0D3C61]/40"
+                    disabled={loading}
+                  >
+                    {loading ? "Criando conta..." : "Criar Conta"}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+          </Card>
+        </div>
+      </section>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-company">Nome da Empresa (opcional)</Label>
-                  <Input
-                    id="signup-company"
-                    type="text"
-                    placeholder="Razão social"
-                    value={signupCompanyName}
-                    onChange={(e) => setSignupCompanyName(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Senha</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-password"
-                      type="password"
-                      placeholder="Mínimo 6 caracteres"
-                      className="pl-10"
-                      value={signupPassword}
-                      onChange={(e) => setSignupPassword(e.target.value)}
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full bg-gradient-primary"
-                  disabled={loading}
-                >
-                  {loading ? "Criando conta..." : "Criar Conta"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </Card>
-      </div>
+      {/* Rodapé opcional pode ser adicionado conforme necessário */}
     </div>
   );
 };
