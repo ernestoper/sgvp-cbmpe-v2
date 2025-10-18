@@ -5,13 +5,16 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Shield, ArrowLeft, Building2, FileText, MapPin, Loader2, User, Phone, Mail, Plus, QrCode, CheckCircle } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Shield, ArrowLeft, Building2, FileText, MapPin, Loader2, User, Phone, Mail, Plus, QrCode, CheckCircle, Upload, Eye, Trash2, Image as ImageIcon, File as FileIcon } from "lucide-react";
+import { useDropzone } from "react-dropzone";
 import { AppHeaderLogo } from "@/components/AppHeaderLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { getCOSCIPbyCNAE } from "@/lib/coscip";
 import { useToast } from "@/hooks/use-toast";
 import QRCode from "qrcode";
+import { DocumentosPorOcupacao } from '@/lib/documents-map';
 
 const NovoProcesso = () => {
   const navigate = useNavigate();
@@ -75,6 +78,128 @@ const NovoProcesso = () => {
       next[index] = value;
       return next;
     });
+  };
+
+  // Endereço estruturado (Passo 3)
+  const [cep, setCep] = useState("");
+  const [logradouro, setLogradouro] = useState("");
+  const [numero, setNumero] = useState("");
+  const [complemento, setComplemento] = useState("");
+  const [bairro, setBairro] = useState("");
+  const [uf, setUf] = useState("");
+  const [cidade, setCidade] = useState("");
+  const [municipios, setMunicipios] = useState<Array<{ id: number; nome: string }>>([]);
+  const [ibgeMunicipioId, setIbgeMunicipioId] = useState<number | null>(null);
+  const [areaConstruida, setAreaConstruida] = useState<number | "">("");
+  const [tipoImovel, setTipoImovel] = useState<"residencial" | "comercial" | "industrial" | "misto" | "outro" | "">("");
+  const [multiPavimentos, setMultiPavimentos] = useState<"sim" | "nao" | "">("");
+
+  // Campos adicionais do endereço
+  const [pontoReferencia, setPontoReferencia] = useState("");
+  const [areaTerreno, setAreaTerreno] = useState<number | "">("");
+  const [latitude, setLatitude] = useState<number | "">("");
+  const [longitude, setLongitude] = useState<number | "">("");
+  const [tipoLogradouro, setTipoLogradouro] = useState("");
+  const [acessoPublico, setAcessoPublico] = useState<"sim" | "nao" | "">("");
+  const [observacoesEndereco, setObservacoesEndereco] = useState("");
+  const [loadingCep, setLoadingCep] = useState(false);
+  const [cepError, setCepError] = useState<string | null>(null);
+  const [manualEdit, setManualEdit] = useState(false);
+
+  // Memorial Preliminar (Passo 4)
+  const [tipoAtividade, setTipoAtividade] = useState("");
+  const [qtdPavimentos, setQtdPavimentos] = useState<number | "">("");
+  const [areaTotalConstruida, setAreaTotalConstruida] = useState<number | "">("");
+  const [tipoEstrutura, setTipoEstrutura] = useState("");
+  const [hasExtintores, setHasExtintores] = useState<"sim" | "nao" | "">("");
+  const [hasIluminacaoEmerg, setHasIluminacaoEmerg] = useState<"sim" | "nao" | "">("");
+  const [hasSinalizacaoEmerg, setHasSinalizacaoEmerg] = useState<"sim" | "nao" | "">("");
+  const [hasHidrantes, setHasHidrantes] = useState<"sim" | "nao" | "">("");
+  const [hasSprinklers, setHasSprinklers] = useState<"sim" | "nao" | "">("");
+  const [possuiPPCI, setPossuiPPCI] = useState<"sim" | "nao" | "">("");
+  const [memorialFile, setMemorialFile] = useState<File | null>(null);
+  const [memorialResumo, setMemorialResumo] = useState("");
+
+  // Documentos (Passo 5)
+  const allowedDocTypes = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+  ];
+  const [pendingDocs, setPendingDocs] = useState<File[]>([]);
+  const [docPreviews, setDocPreviews] = useState<Record<string, string>>({});
+  const [docUploading, setDocUploading] = useState(false);
+  const [docUploadProgress, setDocUploadProgress] = useState(0);
+  const [docTypeByName, setDocTypeByName] = useState<Record<string, string>>({});
+
+  // Lista estruturada por item (obrigatórios/opcionais)
+  type DocStatus = "pendente" | "enviando" | "enviado" | "erro";
+  interface DocItem { id: string; nome: string; obrigatorio: boolean; status: DocStatus; arquivo?: File | null; preview?: string | null; progress?: number; }
+  const [docObrigatorios, setDocObrigatorios] = useState<DocItem[]>([]);
+  const [docOpcionais, setDocOpcionais] = useState<DocItem[]>([]);
+
+  // Heurística simples para detectar ocupação
+  function getOcupacaoTipo(): 'comercial' | 'industrial' | 'default' {
+    const s = (coscipPrincipal?.descricao_cnae || cnaePrincipal || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/industr|fabric|manufatur|textil|vestuari|refin|quimic/.test(s)) return 'industrial';
+    if (/comerc|varejist|loja|supermercad|mercad|restaurante|bar|lanchonete/.test(s)) return 'comercial';
+    return 'default';
+  }
+
+  const buildDocsFor = (risk: "I" | "II" | "III" | "IV" | null, isEvent: boolean) => {
+    const tipoKey = isEvent ? 'evento_temporario' : getOcupacaoTipo();
+    const map = DocumentosPorOcupacao[tipoKey] || DocumentosPorOcupacao.default;
+    if (!risk || risk === 'I') {
+      return { obrigatorios: [], opcionais: map.II.opcionais.map(d => ({ id: d.id, nome: d.nome, obrigatorio: false, status: 'pendente' })) };
+    }
+    const set = map[risk as 'II' | 'III' | 'IV'];
+    return {
+      obrigatorios: set.obrigatorios.map(d => ({ id: d.id, nome: d.nome, obrigatorio: true, status: 'pendente' })),
+      opcionais: set.opcionais.map(d => ({ id: d.id, nome: d.nome, obrigatorio: false, status: 'pendente' })),
+    };
+  };
+
+  useEffect(() => {
+    const risk = getGlobalRiskKey();
+    const { obrigatorios, opcionais } = buildDocsFor(risk, isTemporaryEvent === 'sim');
+    // Revoga URLs antigas para evitar vazamento
+    docObrigatorios.forEach(d => { if (d.preview) try { URL.revokeObjectURL(d.preview); } catch {} });
+    docOpcionais.forEach(d => { if (d.preview) try { URL.revokeObjectURL(d.preview); } catch {} });
+    setDocObrigatorios(obrigatorios);
+    setDocOpcionais(opcionais);
+  }, [coscipPrincipal, coscipSecondary, isTemporaryEvent]);
+
+  const setDocFile = (id: string, file: File | null) => {
+    const validate = (f: File | null) => {
+      if (!f) return { ok: true };
+      const okType = allowedDocTypes.includes(f.type);
+      const okSize = f.size <= 10 * 1024 * 1024;
+      if (!okType || !okSize) {
+        toast({ title: "Formato ou tamanho inválido", description: "Envie PDF/JPG/PNG até 10 MB.", variant: "destructive" });
+        return { ok: false };
+      }
+      return { ok: true };
+    };
+    const v = validate(file);
+    if (!v.ok) return;
+
+    const apply = (list: DocItem[]) => list.map(d => {
+      if (d.id !== id) return d;
+      const preview = file ? URL.createObjectURL(file) : null;
+      return { ...d, arquivo: file, preview, status: file ? "pendente" : "pendente", progress: 0 };
+    });
+    setDocObrigatorios(prev => apply(prev));
+    setDocOpcionais(prev => apply(prev));
+  };
+
+  const removeDocItem = (id: string) => {
+    const revoke = (list: DocItem[]) => list.map(d => {
+      if (d.id !== id) return d;
+      if (d.preview) { try { URL.revokeObjectURL(d.preview); } catch {} }
+      return { ...d, arquivo: null, preview: null, status: "pendente", progress: 0 };
+    });
+    setDocObrigatorios(prev => revoke(prev));
+    setDocOpcionais(prev => revoke(prev));
   };
 
   // Sugestões de CNAE
@@ -537,6 +662,185 @@ const NovoProcesso = () => {
     });
   };
 
+  // Helpers de CEP/IBGE
+  const formatCep = (value: string) => {
+    const numbers = value.replace(/\D/g, "");
+    return numbers.replace(/(\d{5})(\d)/, "$1-$2").slice(0, 9);
+  };
+
+  const fetchViaCEP = async (cleanCep: string) => {
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await res.json();
+      if (data?.erro) return;
+      setLogradouro(data.logradouro || "");
+      setBairro(data.bairro || "");
+      setUf(data.uf || "");
+      setCidade(data.localidade || "");
+      if (data.uf) await loadMunicipiosByUF(data.uf);
+    } catch {}
+  };
+
+  const loadMunicipiosByUF = async (ufCode: string) => {
+    try {
+      const res = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufCode}/municipios`);
+      const arr = await res.json();
+      if (Array.isArray(arr)) {
+        setMunicipios(arr);
+        const found = arr.find((m: any) => String(m?.nome || "").toLowerCase() === String(cidade).toLowerCase());
+        setIbgeMunicipioId(found?.id ?? null);
+      }
+    } catch {}
+  };
+
+  const buscarCep = async () => {
+    const clean = cep.replace(/\D/g, "");
+    setCepError(null);
+    if (clean.length !== 8) {
+      setCepError("CEP inválido — informe 8 dígitos.");
+      toast({ title: "CEP inválido", description: "Informe 8 dígitos.", variant: "destructive" });
+      return;
+    }
+    setLoadingCep(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const data = await res.json();
+      if (data?.erro) {
+        setCepError("CEP não encontrado — verifique ou preencha manualmente.");
+        toast({ title: "CEP não encontrado", description: "Verifique ou preencha manualmente.", variant: "destructive" });
+      } else {
+        setLogradouro(data.logradouro || "");
+        setBairro(data.bairro || "");
+        setUf(data.uf || "");
+        setCidade(data.localidade || "");
+        if (data.uf) await loadMunicipiosByUF(data.uf);
+      }
+    } catch {
+      setCepError("Erro ao consultar CEP");
+      toast({ title: "Erro ao consultar CEP", description: "Tente novamente.", variant: "destructive" });
+    } finally {
+      setLoadingCep(false);
+    }
+  };
+
+  const obterLocalizacao = () => {
+    try {
+      if (!navigator.geolocation) {
+        toast({ title: "Geolocalização indisponível", description: "Seu navegador não suporta.", variant: "destructive" });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLatitude(Number(pos.coords.latitude.toFixed(6)));
+          setLongitude(Number(pos.coords.longitude.toFixed(6)));
+          toast({ title: "Localização obtida", description: "Coordenadas preenchidas." });
+        },
+        (err) => {
+          toast({ title: "Falha ao obter localização", description: err?.message || "Permita acesso à localização.", variant: "destructive" });
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } catch {}
+  };
+
+  const validateAddressStep = (): boolean => {
+    const errors: string[] = [];
+    const cleanCep = cep.replace(/\D/g, "");
+    if (cleanCep.length !== 8) errors.push("CEP inválido — informe 8 dígitos.");
+    if (!logradouro) errors.push("Preencha o logradouro.");
+    if (!numero) errors.push("Informe o número.");
+    if (!bairro) errors.push("Informe o bairro.");
+    if (!cidade || !uf) errors.push("Informe a cidade/UF.");
+    if (getGlobalRiskKey() !== 'I' && (!areaConstruida || Number(areaConstruida) <= 0)) {
+      errors.push("Área construída obrigatória para esta ocupação.");
+    }
+    if (errors.length) {
+      toast({ title: "Endereço incompleto", description: errors.join(" "), variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const full = [
+      logradouro,
+      numero,
+      complemento,
+      bairro,
+      cidade,
+      uf,
+      cep ? `CEP: ${cep}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    setAddress(full);
+  }, [logradouro, numero, complemento, bairro, cidade, uf, cep]);
+
+  // Auto-save do draft de endereço (debounced)
+  useEffect(() => {
+    const payload = {
+      cep: cep.replace(/\D/g, ""),
+      logradouro,
+      numero,
+      complemento,
+      bairro,
+      cidade,
+      uf,
+      ponto_referencia: pontoReferencia,
+      area_construida_m2: areaConstruida || null,
+      area_terreno_m2: areaTerreno || null,
+      tipo_logradouro: tipoLogradouro,
+      tipo_imovel: tipoImovel,
+      multi_pavimentos: multiPavimentos,
+      latitude: latitude || null,
+      longitude: longitude || null,
+      ibge_municipio_id: ibgeMunicipioId,
+      observacoes: observacoesEndereco,
+    };
+    const t = setTimeout(() => {
+      try { localStorage.setItem("sgvp:novo-processo:addressDraft", JSON.stringify(payload)); } catch {}
+    }, 600);
+    return () => clearTimeout(t);
+  }, [cep, logradouro, numero, complemento, bairro, cidade, uf, pontoReferencia, areaConstruida, areaTerreno, tipoLogradouro, tipoImovel, multiPavimentos, latitude, longitude, ibgeMunicipioId, observacoesEndereco]);
+
+  // Dropzone de documentos (Passo 5)
+  const onDocsDrop = (acceptedFiles: File[]) => {
+    const valid = acceptedFiles.filter((f) => allowedDocTypes.includes(f.type) && f.size <= 10 * 1024 * 1024);
+    if (valid.length !== acceptedFiles.length) {
+      toast({
+        title: "Alguns arquivos foram ignorados",
+        description: "Aceitos: PDF/JPG/PNG até 10MB",
+        variant: "destructive",
+      });
+    }
+    const next = [...pendingDocs, ...valid];
+    setPendingDocs(next);
+    const previews: Record<string, string> = {};
+    next.forEach((f) => {
+      if (f.type.startsWith("image/") || f.type === "application/pdf") {
+        previews[f.name] = URL.createObjectURL(f);
+      }
+    });
+    setDocPreviews((prev) => ({ ...prev, ...previews }));
+  };
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop: onDocsDrop });
+
+  const clearPendingDoc = (name: string) => {
+    setPendingDocs((files) => files.filter((f) => f.name !== name));
+    const url = docPreviews[name];
+    if (url) URL.revokeObjectURL(url);
+    setDocPreviews((prev) => {
+      const cpy = { ...prev };
+      delete cpy[name];
+      return cpy;
+    });
+    setDocTypeByName((prev) => {
+      const cpy = { ...prev };
+      delete cpy[name];
+      return cpy;
+    });
+  };
+
   const handleTimelineClick = (i: number) => {
     // Se estiver avançando, valida os campos obrigatórios do passo atual
     if (i > wizardStep) {
@@ -872,6 +1176,95 @@ _Sistema SGVP - Gestão de Vistorias_`;
         responsible_id: user.id,
         responsible_name: "Usuário",
       });
+
+      // Upload automático de memorial e documentos (pós-criação)
+      try {
+        const { storage } = await import("@/lib/storage");
+        const structured = [...docObrigatorios.filter(d => d.arquivo), ...docOpcionais.filter(d => d.arquivo)];
+        let totalToUpload = (memorialFile ? 1 : 0) + pendingDocs.length + structured.length;
+        if (totalToUpload > 0) {
+          setDocUploading(true);
+          setDocUploadProgress(0);
+          let uploaded = 0;
+
+          // Memorial técnico
+          if (memorialFile) {
+            const memorialUrl = await storage.upload(memorialFile, `process-documents/${processId}`);
+            const memorialDocType = memorialFile.type === "application/pdf" ? "pdf" : (memorialFile.type.includes("word") ? "docx" : "arquivo");
+            await dynamodb.documents.create({
+              process_id: processId,
+              document_name: "Memorial Técnico",
+              document_type: memorialDocType,
+              file_url: memorialUrl,
+              status: "pending",
+              stage: "cadastro",
+            });
+            uploaded += 1;
+            setDocUploadProgress(Math.round((uploaded / totalToUpload) * 100));
+          }
+
+          // Documentos estruturados (obrigatórios/opcionais)
+          for (const d of structured) {
+            // status: enviando
+            setDocObrigatorios(prev => prev.map(x => x.id === d.id ? { ...x, status: "enviando" } : x));
+            setDocOpcionais(prev => prev.map(x => x.id === d.id ? { ...x, status: "enviando" } : x));
+            const f = d.arquivo!;
+            const fileUrl = await storage.upload(f, `process-documents/${processId}`);
+            const docType =
+              f.type.startsWith("image/") ? "imagem" :
+              f.type === "application/pdf" ? "pdf" :
+              f.type.includes("word") ? "docx" :
+              f.type.includes("sheet") ? "xlsx" : "arquivo";
+            const label = d.nome;
+            await dynamodb.documents.create({
+              process_id: processId,
+              document_name: label,
+              document_type: docType,
+              file_url: fileUrl,
+              status: "pending",
+              stage: "cadastro",
+            });
+            uploaded += 1;
+            setDocUploadProgress(Math.round((uploaded / totalToUpload) * 100));
+            // status: enviado
+            setDocObrigatorios(prev => prev.map(x => x.id === d.id ? { ...x, status: "enviado", progress: 100 } : x));
+            setDocOpcionais(prev => prev.map(x => x.id === d.id ? { ...x, status: "enviado", progress: 100 } : x));
+          }
+
+          // Demais anexos livres (dropzone)
+          for (const f of pendingDocs) {
+            const fileUrl = await storage.upload(f, `process-documents/${processId}`);
+            const docType =
+              f.type.startsWith("image/") ? "imagem" :
+              f.type === "application/pdf" ? "pdf" :
+              f.type.includes("word") ? "docx" :
+              f.type.includes("sheet") ? "xlsx" : "arquivo";
+            const label = docTypeByName[f.name] || f.name;
+            await dynamodb.documents.create({
+              process_id: processId,
+              document_name: label,
+              document_type: docType,
+              file_url: fileUrl,
+              status: "pending",
+              stage: "cadastro",
+            });
+            uploaded += 1;
+            setDocUploadProgress(Math.round((uploaded / totalToUpload) * 100));
+          }
+
+          toast({ title: "Documentos anexados", description: "Arquivos enviados para análise." });
+          // Limpar estado local dos arquivos
+          setPendingDocs([]);
+          Object.values(docPreviews).forEach((u) => URL.revokeObjectURL(u));
+          setDocPreviews({});
+        }
+      } catch (err: any) {
+        console.error("Erro ao anexar documentos:", err);
+        toast({ title: "Falha ao anexar documentos", description: err.message || "Tente reenviar pelo detalhe do processo.", variant: "destructive" });
+      } finally {
+        setDocUploading(false);
+        setDocUploadProgress(0);
+      }
 
       // Enviar WhatsApp de confirmação
       await sendWhatsAppNotification(phoneDigits, processNumber, companyName, contactName.trim());
@@ -1435,25 +1828,514 @@ _Sistema SGVP - Gestão de Vistorias_`;
 
             {/* Passo 3: Endereço */}
             {wizardStep === 2 && (
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <h3 className="text-sm font-semibold">3. Endereço</h3>
-                <p className="text-sm text-muted-foreground">Informe e confirme o endereço do imóvel.</p>
+                <p className="text-sm text-muted-foreground">Preencha os dados do imóvel. O endereço será preenchido automaticamente pelo CEP quando possível.</p>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cep">CEP *</Label>
+                    <Input
+                      id="cep"
+                      placeholder="00000-000"
+                      value={cep}
+                      onChange={(e) => {
+                        const v = formatCep(e.target.value);
+                        setCep(v);
+                        if (!manualEdit) {
+                          const clean = v.replace(/\D/g, "");
+                          if (clean.length === 8) fetchViaCEP(clean);
+                        }
+                      }}
+                      required
+                      inputMode="numeric"
+                    />
+                    {cepError && <p className="text-xs text-red-600">{cepError}</p>}
+                    <div className="flex items-center gap-2">
+                      <Button type="button" size="sm" onClick={buscarCep} disabled={loadingCep} className="bg-primary text-white">
+                        {loadingCep ? (<><Loader2 className="mr-1 h-3 w-3 animate-spin" />Buscando</>) : 'Buscar CEP'}
+                      </Button>
+                      <button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => setManualEdit((v) => !v)}>
+                        {manualEdit ? 'Desativar edição manual' : 'Editar manualmente'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Ao informar 8 dígitos, você pode buscar na ViaCEP.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="uf">Estado (UF) *</Label>
+                    <select
+                      id="uf"
+                      className="border rounded-md h-10 px-3 bg-background"
+                      value={uf}
+                      onChange={async (e) => { setUf(e.target.value); await loadMunicipiosByUF(e.target.value); }}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RO','RS','RR','SC','SE','SP','TO'].map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-1">
+                    <Label htmlFor="cidade">Cidade *</Label>
+                    <select
+                      id="cidade"
+                      className="border rounded-md h-10 px-3 bg-background"
+                      value={cidade}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        setCidade(name);
+                        const found = municipios.find((m) => m.nome === name);
+                        setIbgeMunicipioId(found?.id ?? null);
+                      }}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {municipios.map((m) => (
+                        <option key={m.id} value={m.nome}>{m.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="logradouro">Logradouro *</Label>
+                    <Input id="logradouro" value={logradouro} onChange={(e) => setLogradouro(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="numero">Número *</Label>
+                    <Input id="numero" value={numero} onChange={(e) => setNumero(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="complemento">Complemento</Label>
+                    <Input id="complemento" value={complemento} onChange={(e) => setComplemento(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bairro">Bairro *</Label>
+                    <Input id="bairro" value={bairro} onChange={(e) => setBairro(e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="areaConstruida">Área construída (m²) {getGlobalRiskKey() !== 'I' ? '*' : ''}</Label>
+                    <Input id="areaConstruida" type="number" min={0} value={areaConstruida as number | ''} onChange={(e) => setAreaConstruida(Number(e.target.value) || '')} required={getGlobalRiskKey() !== 'I'} />
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tipoLogradouro">Tipo de logradouro</Label>
+                    <select
+                      id="tipoLogradouro"
+                      className="border rounded-md h-10 px-3 bg-background"
+                      value={tipoLogradouro}
+                      onChange={(e) => setTipoLogradouro(e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      <option value="Rua">Rua</option>
+                      <option value="Avenida">Avenida</option>
+                      <option value="Travessa">Travessa</option>
+                      <option value="Rodovia">Rodovia</option>
+                      <option value="Praça">Praça</option>
+                      <option value="Estrada">Estrada</option>
+                      <option value="Alameda">Alameda</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pontoReferencia">Ponto de referência</Label>
+                    <Input id="pontoReferencia" value={pontoReferencia} onChange={(e) => setPontoReferencia(e.target.value)} placeholder="Ex.: Próximo ao Shopping X" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="areaTerreno">Área terreno (m²)</Label>
+                    <Input id="areaTerreno" type="number" min={0} value={areaTerreno as number | ''} onChange={(e) => setAreaTerreno(Number(e.target.value) || '')} />
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="latitude">Latitude</Label>
+                    <Input id="latitude" type="number" step="0.000001" value={latitude as number | ''} onChange={(e) => setLatitude(Number(e.target.value) || '')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="longitude">Longitude</Label>
+                    <Input id="longitude" type="number" step="0.000001" value={longitude as number | ''} onChange={(e) => setLongitude(Number(e.target.value) || '')} />
+                  </div>
+                  <div className="flex items-end">
+                    <Button type="button" variant="outline" onClick={obterLocalizacao}>
+                      Obter localização
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Possui acesso público</Label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="acessoPublico" value="sim" checked={acessoPublico === 'sim'} onChange={() => setAcessoPublico('sim')} />
+                      <span>Sim</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="acessoPublico" value="nao" checked={acessoPublico === 'nao'} onChange={() => setAcessoPublico('nao')} />
+                      <span>Não</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="observacoesEndereco">Observações sobre o endereço</Label>
+                  <Textarea id="observacoesEndereco" value={observacoesEndereco} onChange={(e) => setObservacoesEndereco(e.target.value)} placeholder="Informações adicionais relevantes sobre o endereço" />
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tipoImovel">Tipo de imóvel *</Label>
+                    <select
+                      id="tipoImovel"
+                      className="border rounded-md h-10 px-3 bg-background"
+                      value={tipoImovel}
+                      onChange={(e) => setTipoImovel(e.target.value as any)}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      <option value="residencial">Residencial</option>
+                      <option value="comercial">Comercial</option>
+                      <option value="industrial">Industrial</option>
+                      <option value="misto">Misto</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Possui edificação em mais de 1 pavimento?</Label>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="multiPav" value="sim" checked={multiPavimentos === 'sim'} onChange={() => setMultiPavimentos('sim')} />
+                        <span>Sim</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="multiPav" value="nao" checked={multiPavimentos === 'nao'} onChange={() => setMultiPavimentos('nao')} />
+                        <span>Não</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-3 text-xs text-muted-foreground">
+                  IBGE: {ibgeMunicipioId ? `Município ${ibgeMunicipioId}` : '—'} • UF: {uf || '—'} • CEP: {cep || '—'}
+                </div>
               </div>
             )}
 
             {/* Passo 4: Memorial Preliminar */}
             {wizardStep === 3 && (
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <h3 className="text-sm font-semibold">4. Memorial Preliminar</h3>
-                <p className="text-sm text-muted-foreground">Conteúdo do memorial preliminar será inserido aqui.</p>
+                <p className="text-sm text-muted-foreground">Requisitos variam conforme o risco: {getGlobalRiskKey() ? `Risco ${getGlobalRiskKey()}` : '—'}.</p>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tipoAtividade">Tipo de atividade desenvolvida {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                    <Input id="tipoAtividade" value={tipoAtividade} onChange={(e) => setTipoAtividade(e.target.value)} required={getGlobalRiskKey() !== 'I'} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="qtdPavimentos">Quantidade de pavimentos {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                    <Input id="qtdPavimentos" type="number" min={0} value={qtdPavimentos as number | ''} onChange={(e) => setQtdPavimentos(Number(e.target.value) || '')} required={getGlobalRiskKey() !== 'I'} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="areaTotalConstruida">Área total construída (m²) {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                    <Input id="areaTotalConstruida" type="number" min={0} value={areaTotalConstruida as number | ''} onChange={(e) => setAreaTotalConstruida(Number(e.target.value) || '')} required={getGlobalRiskKey() !== 'I'} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tipoEstrutura">Tipo de estrutura da edificação {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                    <Input id="tipoEstrutura" value={tipoEstrutura} onChange={(e) => setTipoEstrutura(e.target.value)} required={getGlobalRiskKey() !== 'I'} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Sistema de proteção contra incêndio existente {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <div>
+                      <Label>Extintores {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="extintores" value="sim" checked={hasExtintores === 'sim'} onChange={() => setHasExtintores('sim')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Sim</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="extintores" value="nao" checked={hasExtintores === 'nao'} onChange={() => setHasExtintores('nao')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Não</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Iluminação de emergência {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="iluminacao" value="sim" checked={hasIluminacaoEmerg === 'sim'} onChange={() => setHasIluminacaoEmerg('sim')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Sim</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="iluminacao" value="nao" checked={hasIluminacaoEmerg === 'nao'} onChange={() => setHasIluminacaoEmerg('nao')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Não</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Sinalização de emergência {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="sinalizacao" value="sim" checked={hasSinalizacaoEmerg === 'sim'} onChange={() => setHasSinalizacaoEmerg('sim')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Sim</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="sinalizacao" value="nao" checked={hasSinalizacaoEmerg === 'nao'} onChange={() => setHasSinalizacaoEmerg('nao')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Não</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Hidrantes {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="hidrantes" value="sim" checked={hasHidrantes === 'sim'} onChange={() => setHasHidrantes('sim')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Sim</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="hidrantes" value="nao" checked={hasHidrantes === 'nao'} onChange={() => setHasHidrantes('nao')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Não</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Sprinklers {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="sprinklers" value="sim" checked={hasSprinklers === 'sim'} onChange={() => setHasSprinklers('sim')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Sim</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="radio" name="sprinklers" value="nao" checked={hasSprinklers === 'nao'} onChange={() => setHasSprinklers('nao')} required={getGlobalRiskKey() !== 'I'} />
+                          <span>Não</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Possui PPCI (Plano de Prevenção e Combate a Incêndio)? {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="ppci" value="sim" checked={possuiPPCI === 'sim'} onChange={() => setPossuiPPCI('sim')} required={getGlobalRiskKey() !== 'I'} />
+                      <span>Sim</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="ppci" value="nao" checked={possuiPPCI === 'nao'} onChange={() => setPossuiPPCI('nao')} required={getGlobalRiskKey() !== 'I'} />
+                      <span>Não</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="memorialFile">Upload de arquivo memorial técnico (PDF ou DOC) {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                  <Input id="memorialFile" type="file" accept=".pdf,.doc,.docx" onChange={(e) => setMemorialFile(e.target.files?.[0] || null)} required={getGlobalRiskKey() !== 'I'} />
+                  {getGlobalRiskKey() === 'I' && (
+                    <div className="space-y-2 mt-2">
+                      <Label htmlFor="memorialResumo">Resumo simples *</Label>
+                      <Textarea id="memorialResumo" placeholder="Descreva brevemente a atividade e medidas de segurança." value={memorialResumo} onChange={(e) => setMemorialResumo(e.target.value)} required />
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {/* Passo 5: Documentos */}
             {wizardStep === 4 && (
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <h3 className="text-sm font-semibold">5. Documentos</h3>
-                <p className="text-sm text-muted-foreground">Envio de documentos será disponibilizado nesta etapa.</p>
+                <p className="text-sm text-muted-foreground">PDF/JPG/JPEG/PNG — máx. 10MB. Os arquivos serão enviados após criar o processo.</p>
+
+                {(() => {
+                  const riskKey = getGlobalRiskKey();
+                  const allMandatorySelected = riskKey === "I" ? true : (docObrigatorios.length > 0 && docObrigatorios.every(d => !!d.arquivo));
+                  return (
+                    <>
+                      {riskKey === "I" ? (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                          Etapa não aplicável para Risco I. Nenhum documento obrigatório.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">Documentos obrigatórios</p>
+                            <div className="space-y-2">
+                              {docObrigatorios.map((d) => {
+                                const isImage = d.arquivo?.type.startsWith("image/");
+                                const isPdf = d.arquivo?.type === "application/pdf";
+                                const statusClass = d.status === "enviado" ? "text-green-600" : d.status === "enviando" ? "text-yellow-600" : d.status === "erro" ? "text-red-600" : "text-red-600";
+                                return (
+                                  <div key={d.id} className="flex items-center justify-between border rounded-md p-2">
+                                    <div className="flex items-center gap-3">
+                                      {d.preview ? (
+                                        isImage ? <img src={d.preview} alt={d.nome} className="w-10 h-10 rounded object-cover" /> :
+                                        isPdf ? <FileIcon className="w-10 h-10 text-muted-foreground" /> :
+                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
+                                      ) : (
+                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
+                                      )}
+                                      <div>
+                                        <p className="text-sm font-medium">{d.nome}</p>
+                                        <p className={`text-xs ${statusClass}`}>{d.status === "pendente" ? "🔴 Pendente" : d.status === "enviando" ? "🟡 Enviando" : d.status === "enviado" ? "🟢 Enviado" : "❌ Erro"}</p>
+                                        {d.arquivo?.name && <p className="text-xs text-muted-foreground">{d.arquivo.name}</p>}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" id={`file-${d.id}`} className="hidden" onChange={(e) => setDocFile(d.id, e.target.files?.[0] || null)} />
+                                      <Button variant="secondary" size="sm" onClick={() => document.getElementById(`file-${d.id}`)?.click()} title="Enviar ou substituir">
+                                        <Upload className="w-4 h-4 mr-1" /> Upload
+                                      </Button>
+                                      {d.preview && (isImage || isPdf) && (
+                                        <Button variant="ghost" size="sm" onClick={() => d.preview && window.open(d.preview, "_blank")} title="Visualizar">
+                                          <Eye className="w-4 h-4 mr-1" /> Ver
+                                        </Button>
+                                      )}
+                                      <Button variant="ghost" size="sm" onClick={() => removeDocItem(d.id)} title="Remover">
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 mt-4">
+                            <p className="text-sm font-medium">Documentos opcionais</p>
+                            <div className="space-y-2">
+                              {docOpcionais.map((d) => {
+                                const isImage = d.arquivo?.type.startsWith("image/");
+                                const isPdf = d.arquivo?.type === "application/pdf";
+                                const statusClass = d.status === "enviado" ? "text-green-600" : d.status === "enviando" ? "text-yellow-600" : d.status === "erro" ? "text-red-600" : "text-muted-foreground";
+                                return (
+                                  <div key={d.id} className="flex items-center justify-between border rounded-md p-2">
+                                    <div className="flex items-center gap-3">
+                                      {d.preview ? (
+                                        isImage ? <img src={d.preview} alt={d.nome} className="w-10 h-10 rounded object-cover" /> :
+                                        isPdf ? <FileIcon className="w-10 h-10 text-muted-foreground" /> :
+                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
+                                      ) : (
+                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
+                                      )}
+                                      <div>
+                                        <p className="text-sm">{d.nome}</p>
+                                        {d.arquivo?.name && <p className="text-xs text-muted-foreground">{d.arquivo.name}</p>}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" id={`file-${d.id}`} className="hidden" onChange={(e) => setDocFile(d.id, e.target.files?.[0] || null)} />
+                                      <Button variant="secondary" size="sm" onClick={() => document.getElementById(`file-${d.id}`)?.click()} title="Enviar ou substituir">
+                                        <Upload className="w-4 h-4 mr-1" /> Upload
+                                      </Button>
+                                      {d.preview && (isImage || isPdf) && (
+                                        <Button variant="ghost" size="sm" onClick={() => d.preview && window.open(d.preview, "_blank")} title="Visualizar">
+                                          <Eye className="w-4 h-4 mr-1" /> Ver
+                                        </Button>
+                                      )}
+                                      <Button variant="ghost" size="sm" onClick={() => removeDocItem(d.id)} title="Remover">
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {docUploading && <Progress value={docUploadProgress} className="mt-4" />}
+                          {!allMandatorySelected && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 mt-2">
+                              Envie todos os documentos obrigatórios para continuar.
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Outros anexos (opcionais) via arrastar/soltar */}
+                      <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-4 mt-4">
+                        <div
+                          {...getRootProps()}
+                          className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer ${isDragActive ? "bg-primary/5 border-primary" : "bg-muted/50"}`}
+                        >
+                          <input {...getInputProps()} />
+                          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                            <Upload className="w-4 h-4" />
+                            <span>Outros anexos: arraste/solte ou clique para selecionar</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2">PDF/JPG/JPEG/PNG — máx. 10MB</p>
+                        </div>
+
+                        {pendingDocs.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <p className="text-sm font-medium">Anexos pendentes ({pendingDocs.length})</p>
+                            <div className="space-y-2">
+                              {pendingDocs.map((f) => {
+                                const preview = docPreviews[f.name];
+                                const isImage = f.type.startsWith("image/");
+                                const isPdf = f.type === "application/pdf";
+                                return (
+                                  <div key={f.name} className="flex items-center justify-between border rounded-md p-2">
+                                    <div className="flex items-center gap-3">
+                                      {preview ? (
+                                        isImage ? <img src={preview} alt={f.name} className="w-10 h-10 rounded object-cover" /> :
+                                        isPdf ? <FileIcon className="w-10 h-10 text-muted-foreground" /> :
+                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
+                                      ) : (
+                                        isImage ? <ImageIcon className="w-10 h-10 text-muted-foreground" /> : <FileIcon className="w-10 h-10 text-muted-foreground" />
+                                      )}
+                                      <div>
+                                        <p className="text-sm font-medium">{f.name}</p>
+                                        <p className="text-xs text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <select
+                                        className="border rounded-md h-9 px-2 bg-background text-sm"
+                                        value={docTypeByName[f.name] || ""}
+                                        onChange={(e) => setDocTypeByName(prev => ({ ...prev, [f.name]: e.target.value }))}
+                                      >
+                                        <option value="">Tipo de documento</option>
+                                        <option value="Cópia do CNPJ">Cópia do CNPJ</option>
+                                        <option value="Planta baixa (PDF)">Planta baixa (PDF)</option>
+                                        <option value="ART/RRT do responsável">ART/RRT do responsável</option>
+                                        <option value="Comprovante de pagamento da taxa">Comprovante de pagamento da taxa</option>
+                                        <option value="Laudo técnico">Laudo técnico</option>
+                                      </select>
+                                      {(isImage || isPdf) && preview && (
+                                        <Button variant="ghost" size="sm" onClick={() => window.open(preview, "_blank")}>
+                                          <Eye className="w-4 h-4 mr-1" /> Ver
+                                        </Button>
+                                      )}
+                                      <Button variant="ghost" size="sm" onClick={() => clearPendingDoc(f.name)}>
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                        Após criar o processo, os documentos serão enviados e ficarão com status “⏳ Em análise”. Você poderá acompanhar e reenviar se necessário.
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
 
@@ -1471,8 +2353,12 @@ _Sistema SGVP - Gestão de Vistorias_`;
                   type="button"
                   className="bg-gradient-primary"
                   onClick={() => {
-                    const valid = validateCurrentStep();
-                    if (!valid) return;
+                    const basicValid = validateCurrentStep();
+                    if (!basicValid) return;
+                    if (wizardStep === 2) {
+                      const ok = validateAddressStep();
+                      if (!ok) return;
+                    }
                     setWizardStep((prev) => {
                       const next = Math.min(steps.length - 1, prev + 1);
                       if (next > 1 && !paymentCompleted) return 1;
@@ -1490,7 +2376,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
               type="submit"
               className="w-full bg-gradient-primary"
               size="lg"
-              disabled={loading || wizardStep !== steps.length - 1}
+              disabled={loading || wizardStep !== steps.length - 1 || ((getGlobalRiskKey() !== "I") && !(docObrigatorios.length > 0 && docObrigatorios.every(d => !!d.arquivo)))}
             >
               {loading ? (
                 <>

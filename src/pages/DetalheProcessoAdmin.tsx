@@ -512,17 +512,32 @@ const DetalheProcessoAdmin = () => {
 
   const openPreviewForDoc = async (doc: ProcessDocument) => {
     try {
-      const path = doc.file_url.startsWith("http")
-        ? (doc.file_url.split("/process-documents/")[1] || doc.file_url)
-        : doc.file_url;
-      const { data: signed, error } = await supabase.storage
-        .from("process-documents")
-        .createSignedUrl(path, 60 * 10);
-      if (error || !signed?.signedUrl) throw error || new Error("Não foi possível gerar URL.");
-      const url = signed.signedUrl;
-      const isImg = path.match(/\.(png|jpe?g)$/i);
-      const isPdf = path.endsWith(".pdf");
-      setPreviewDoc({ type: isImg ? "image" : isPdf ? "pdf" : "other", url, name: doc.document_name });
+      let previewUrl = doc.file_url;
+
+      if (previewUrl.startsWith("http")) {
+        // Usa a URL direta (S3 ou Supabase pública)
+      } else {
+        // Construir URL do S3 se disponível; caso contrário, gerar URL assinada do Supabase
+        const S3_BUCKET = import.meta.env.VITE_S3_BUCKET;
+        const S3_REGION = import.meta.env.VITE_AWS_REGION;
+        const key = doc.file_url.startsWith("process-documents/")
+          ? doc.file_url
+          : `process-documents/${doc.file_url}`;
+
+        if (S3_BUCKET && S3_REGION) {
+          previewUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+        } else {
+          const { data: signed, error } = await supabase.storage
+            .from("process-documents")
+            .createSignedUrl(key, 60 * 10);
+          if (error || !signed?.signedUrl) throw error || new Error("Não foi possível gerar URL.");
+          previewUrl = signed.signedUrl;
+        }
+      }
+
+      const isImg = previewUrl.match(/\.(png|jpe?g)$/i);
+      const isPdf = previewUrl.endsWith(".pdf");
+      setPreviewDoc({ type: isImg ? "image" : isPdf ? "pdf" : "other", url: previewUrl, name: doc.document_name });
     } catch (e: any) {
       console.error(e);
       toast({ title: "Erro ao abrir documento", description: e.message || "Não foi possível gerar preview", variant: "destructive" });
@@ -531,17 +546,31 @@ const DetalheProcessoAdmin = () => {
 
   const openPreviewForVersion = async (doc: ProcessDocument, v: DocumentVersion) => {
     try {
-      const path = v.file_url.startsWith("http")
-        ? (v.file_url.split("/process-documents/")[1] || v.file_url)
-        : v.file_url;
-      const { data: signed, error } = await supabase.storage
-        .from("process-documents")
-        .createSignedUrl(path, 60 * 10);
-      if (error || !signed?.signedUrl) throw error || new Error("Não foi possível gerar URL.");
-      const url = signed.signedUrl;
-      const isImg = path.match(/\.(png|jpe?g)$/i);
-      const isPdf = path.endsWith(".pdf");
-      setPreviewDoc({ type: isImg ? "image" : isPdf ? "pdf" : "other", url, name: `${doc.document_name} (v${v.version_number})` });
+      let previewUrl = v.file_url;
+
+      if (previewUrl.startsWith("http")) {
+        // Usa a URL direta
+      } else {
+        const S3_BUCKET = import.meta.env.VITE_S3_BUCKET;
+        const S3_REGION = import.meta.env.VITE_AWS_REGION;
+        const key = v.file_url.startsWith("process-documents/")
+          ? v.file_url
+          : `process-documents/${v.file_url}`;
+
+        if (S3_BUCKET && S3_REGION) {
+          previewUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+        } else {
+          const { data: signed, error } = await supabase.storage
+            .from("process-documents")
+            .createSignedUrl(key, 60 * 10);
+          if (error || !signed?.signedUrl) throw error || new Error("Não foi possível gerar URL.");
+          previewUrl = signed.signedUrl;
+        }
+      }
+
+      const isImg = previewUrl.match(/\.(png|jpe?g)$/i);
+      const isPdf = previewUrl.endsWith(".pdf");
+      setPreviewDoc({ type: isImg ? "image" : isPdf ? "pdf" : "other", url: previewUrl, name: `${doc.document_name} (v${v.version_number})` });
     } catch (e: any) {
       toast({ title: "Erro ao abrir versão", description: e?.message || "Tente novamente.", variant: "destructive" });
     }
@@ -1140,21 +1169,7 @@ const DetalheProcessoAdmin = () => {
               onDownloadDoc={handleDownload as any}
               onSelectStage={(status) => setSelectedStage(status)}
             />
-            {/* Resumo de status da etapa selecionada */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center shadow-sm">
-                <p className="text-sm text-green-600 font-semibold">✅ Aprovados</p>
-                <p className="text-2xl font-bold text-green-700">{approvedCountSelected}</p>
-              </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center shadow-sm">
-                <p className="text-sm text-yellow-600 font-semibold">⏳ Pendentes</p>
-                <p className="text-2xl font-bold text-yellow-700">{pendingCountSelected}</p>
-              </div>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center shadow-sm">
-                <p className="text-sm text-red-600 font-semibold">❌ Reprovados</p>
-                <p className="text-2xl font-bold text-red-700">{rejectedCountSelected}</p>
-              </div>
-            </div>
+
           </div>
           {/* Ações Administrativas e Documentos abaixo da timeline */}
           <div className="grid md:grid-cols-2 gap-6">
