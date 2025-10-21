@@ -60,6 +60,17 @@ const NovoProcesso = () => {
   const [taxaValor, setTaxaValor] = useState<number | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [referenceCode, setReferenceCode] = useState<string | null>(null);
+  // Aceite do Termo de Bombeiro (novo Passo 2)
+  const [termoAceito, setTermoAceito] = useState(false);
+  const [cidadeEstabelecimento, setCidadeEstabelecimento] = useState<string>("");
+  
+  // Estados para Finalização (Passo 5)
+  const [isento, setIsento] = useState(false);
+  const [boletoGerado, setBoletoGerado] = useState(false);
+  const [boletoUrl, setBoletoUrl] = useState<string | null>(null);
+  // Etapa 5 – campos obrigatórios
+  const [juntoPagamento, setJuntoPagamento] = useState<"sim" | "nao" | "">("");
+  const [termoResponsabilidadeAceito, setTermoResponsabilidadeAceito] = useState(false);
 
   // Evento temporário
   const [isTemporaryEvent, setIsTemporaryEvent] = useState<'sim' | 'nao'>("nao");
@@ -119,6 +130,21 @@ const NovoProcesso = () => {
   const [possuiPPCI, setPossuiPPCI] = useState<"sim" | "nao" | "">("");
   const [memorialFile, setMemorialFile] = useState<File | null>(null);
   const [memorialResumo, setMemorialResumo] = useState("");
+
+  // Novos campos da Etapa 4 – Memorial Preliminar (ajustada)
+  const [riscoOcupacao, setRiscoOcupacao] = useState("");
+  const [isCondominio, setIsCondominio] = useState<"sim" | "nao" | "">("");
+  const [condominioNome, setCondominioNome] = useState("");
+  const [condominioDoc, setCondominioDoc] = useState("");
+  const [alturaEdificacao, setAlturaEdificacao] = useState<number | "">("");
+  const [capacidadeFisica, setCapacidadeFisica] = useState<number | "">("");
+  const [centralGLPInstalada, setCentralGLPInstalada] = useState<"sim" | "nao" | "">("");
+  const [numBotijoesGLP, setNumBotijoesGLP] = useState<number | "">("");
+  const [pontoGasExiste, setPontoGasExiste] = useState<"sim" | "nao" | "">("");
+  const [trabalhaExplosivos, setTrabalhaExplosivos] = useState<"sim" | "nao" | "">("");
+  const [existeSistemaFixo, setExisteSistemaFixo] = useState<"sim" | "nao" | "">("");
+  const [numeroProjeto, setNumeroProjeto] = useState("");
+  const [observacoesGerais, setObservacoesGerais] = useState("");
 
   // Documentos (Passo 5)
   const allowedDocTypes = [
@@ -434,6 +460,12 @@ const NovoProcesso = () => {
       });
   }, [wizardStep, coscipPrincipal, coscipSecondary, cnpj]);
 
+  // Isenção automática quando risco for I
+  useEffect(() => {
+    const key = getGlobalRiskKey();
+    setIsento(key === "I");
+  }, [coscipPrincipal, coscipSecondary]);
+
   // salvar edição manual da categoria
   const salvarEdicaoCOSCIP = () => {
     const key = normalizeRiskCategory(coscipEditSelection);
@@ -587,11 +619,11 @@ const NovoProcesso = () => {
 
   // Wizard timeline (visual only, não altera o formulário existente)
   const steps = [
-    { key: "ocupacao", label: "Ocupação" },
-    { key: "taxa", label: "Taxa de Bombeiro" },
+    { key: "entrada", label: "Ocupação" },
+    { key: "termo", label: "Taxa de Bombeiro" },
     { key: "endereco", label: "Endereço" },
-    { key: "memorial", label: "Memorial Preliminar" },
-    { key: "documentos", label: "Documentos" },
+    { key: "memorial", label: "Memorial Descritivo" },
+    { key: "finalizacao", label: "Finalização" },
   ];
   // edição manual COSCIP
   const [coscipEditOpen, setCoscipEditOpen] = useState(false);
@@ -666,6 +698,30 @@ const NovoProcesso = () => {
   const formatCep = (value: string) => {
     const numbers = value.replace(/\D/g, "");
     return numbers.replace(/(\d{5})(\d)/, "$1-$2").slice(0, 9);
+  };
+
+  // Máscaras CPF/CNPJ dinâmicas para documento do condomínio
+  const formatCPF = (value: string) => {
+    const numbers = value.replace(/\D/g, "");
+    if (numbers.length <= 11) {
+      return numbers
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1-$2");
+    }
+    return numbers.slice(0, 11);
+  };
+
+  const formatCpfCnpjGeneric = (value: string) => {
+    const numbers = value.replace(/\D/g, "");
+    if (numbers.length <= 11) {
+      return formatCPF(numbers);
+    }
+    return formatCNPJ(numbers);
+  };
+
+  const handleCondominioDocChange = (value: string) => {
+    setCondominioDoc(formatCpfCnpjGeneric(value));
   };
 
   const fetchViaCEP = async (cleanCep: string) => {
@@ -747,19 +803,76 @@ const NovoProcesso = () => {
     const errors: string[] = [];
     const cleanCep = cep.replace(/\D/g, "");
     if (cleanCep.length !== 8) errors.push("CEP inválido — informe 8 dígitos.");
-    if (!logradouro) errors.push("Preencha o logradouro.");
-    if (!numero) errors.push("Informe o número.");
-    if (!bairro) errors.push("Informe o bairro.");
-    if (!cidade || !uf) errors.push("Informe a cidade/UF.");
-    if (getGlobalRiskKey() !== 'I' && (!areaConstruida || Number(areaConstruida) <= 0)) {
-      errors.push("Área construída obrigatória para esta ocupação.");
-    }
+    if (!logradouro.trim()) errors.push("Preencha o logradouro.");
+    if (!numero.trim()) errors.push("Informe o número.");
+    if (!bairro.trim()) errors.push("Informe o bairro.");
+    if (!cidade.trim()) errors.push("Informe a cidade.");
     if (errors.length) {
       toast({ title: "Endereço incompleto", description: errors.join(" "), variant: "destructive" });
       return false;
     }
     return true;
   };
+
+  const validateMemorialStep = (): boolean => {
+    const errors: string[] = [];
+
+    if (!riscoOcupacao) errors.push("Selecione o risco da ocupação.");
+
+    if (areaTotalConstruida === "" || Number(areaTotalConstruida) <= 0) {
+      errors.push("Informe a área construída declarada (m²).");
+    }
+
+    if (!isCondominio) {
+      errors.push("Informe se é condomínio.");
+    } else if (isCondominio === "sim") {
+      if (!condominioNome.trim()) errors.push("Informe o nome do condomínio.");
+      const docDigits = condominioDoc.replace(/\D/g, "");
+      if (!(docDigits.length === 11 || docDigits.length === 14)) {
+        errors.push("Informe CPF (11 dígitos) ou CNPJ (14 dígitos) do condomínio.");
+      }
+    }
+
+    if (alturaEdificacao === "" || Number(alturaEdificacao) <= 0) {
+      errors.push("Informe a altura da edificação (m).");
+    }
+
+    if (qtdPavimentos === "" || Number(qtdPavimentos) <= 0) {
+      errors.push("Informe o número de pavimentos.");
+    }
+
+    if (capacidadeFisica === "" || Number(capacidadeFisica) <= 0) {
+      errors.push("Informe a capacidade física (pessoas).");
+    }
+
+    if (!centralGLPInstalada) {
+      errors.push("Informe se há central de gás (GLP) instalada.");
+    } else if (centralGLPInstalada === "sim") {
+      if (numBotijoesGLP === "" || Number(numBotijoesGLP) <= 0) {
+        errors.push("Informe o número de botijões de GLP (Kg).");
+      }
+      if (!pontoGasExiste) {
+        errors.push("Informe se o ponto de gás existe.");
+      }
+    }
+
+    if (!trabalhaExplosivos) errors.push("Informe se trabalha com explosivos ou produtos perigosos.");
+    if (!existeSistemaFixo) errors.push("Informe se existe sistema fixo.");
+
+    if (errors.length) {
+      toast({ title: "Memorial incompleto", description: errors.join(" "), variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
+
+  // Fixar UF como Pernambuco e carregar municípios ao entrar na Etapa 3
+  useEffect(() => {
+    if (!uf) {
+      setUf('PE');
+      loadMunicipiosByUF('PE');
+    }
+  }, []);
 
   useEffect(() => {
     const full = [
@@ -846,14 +959,15 @@ const NovoProcesso = () => {
     if (i > wizardStep) {
       const valid = validateCurrentStep();
       if (!valid) return;
-    }
-    if (i > 1 && !paymentCompleted) {
-      toast({
-        title: "Finalize o pagamento",
-        description: "Clique em 'Confirmar pagamento' para prosseguir.",
-      });
-      setWizardStep(1);
-      return;
+      // Bloqueio específico do passo 2: cidade selecionada
+      if (wizardStep === 1 && !cidadeEstabelecimento) {
+        toast({
+          title: "Selecione a cidade",
+          description: "Escolha a cidade do estabelecimento para continuar.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
     setWizardStep(i);
   };
@@ -1104,6 +1218,17 @@ _Sistema SGVP - Gestão de Vistorias_`;
         throw new Error("E-mail inválido.");
       }
 
+      // Validações da Etapa 5
+      if (!termoResponsabilidadeAceito) {
+        throw new Error("Você deve aceitar o Termo de Responsabilidade.");
+      }
+      if (!juntoPagamento) {
+        throw new Error("Selecione a opção “Junto de Pagamento?”.");
+      }
+      if (getGlobalRiskKey() !== "I" && !isento && !boletoGerado) {
+        throw new Error("Gere o boleto para prosseguir.");
+      }
+
       const processNumber = generateProcessNumber();
 
       // Inserção com fallback quando banco remoto não tem colunas de contato
@@ -1116,7 +1241,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
         contact_name: contactName.trim(),
         contact_phone: phoneDigits,
         contact_email: contactEmail.trim(),
-        current_status: "cadastro",
+        current_status: "aguardando_pagamento",
       };
 
       const isMissingContactError = (err: any) => {
@@ -1129,13 +1254,15 @@ _Sistema SGVP - Gestão de Vistorias_`;
       };
 
       // Create process in DynamoDB
+      const riskKey = getGlobalRiskKey();
+      const riskLabel = riskKey === "I" ? "BAIXO" : riskKey === "II" ? "MÉDIO" : riskKey === "III" ? "ALTO" : riskKey === "IV" ? "MUITO ALTO" : undefined;
       const processData = {
         user_id: user.id,
         process_number: processNumber,
         company_name: companyName,
         cnpj: cnpj.replace(/\D/g, ""),
         address: address,
-        current_status: "cadastro" as const,
+        current_status: "aguardando_pagamento" as const,
         contact_name: contactName.trim() || undefined,
         contact_phone: phoneDigits || undefined,
         contact_email: contactEmail.trim() || undefined,
@@ -1153,6 +1280,39 @@ _Sistema SGVP - Gestão de Vistorias_`;
         coscip_secundarios: coscipSecondary,
         taxa_bombeiro_valor: typeof taxaValor === "number" ? Number(taxaValor) : undefined,
         taxa_bombeiro_pago: paymentCompleted,
+        boleto_url: boletoUrl || undefined,
+        risco_final: riskLabel,
+        // Etapa 3 – Endereço estruturado
+        cep: cep || undefined,
+        logradouro: logradouro || undefined,
+        numero: numero || undefined,
+        complemento: complemento || undefined,
+        bairro: bairro || undefined,
+        cidade: cidade || undefined,
+        cidadeEstabelecimento: cidadeEstabelecimento || undefined,
+        uf: uf || undefined,
+        areaConstruida: typeof areaConstruida === "number" ? Number(areaConstruida) : undefined,
+        tipoImovel: tipoImovel || undefined,
+        multiPavimentos: multiPavimentos || undefined,
+        pontoReferencia: pontoReferencia || undefined,
+        areaTerreno: typeof areaTerreno === "number" ? Number(areaTerreno) : undefined,
+        latitude: typeof latitude === "number" ? Number(latitude) : undefined,
+        longitude: typeof longitude === "number" ? Number(longitude) : undefined,
+        tipoLogradouro: tipoLogradouro || undefined,
+        acessoPublico: acessoPublico || undefined,
+        observacoesEndereco: observacoesEndereco || undefined,
+        // Etapa 4 – Memorial Preliminar
+        tipoAtividade: tipoAtividade || undefined,
+        qtdPavimentos: typeof qtdPavimentos === "number" ? Number(qtdPavimentos) : undefined,
+        areaTotalConstruida: typeof areaTotalConstruida === "number" ? Number(areaTotalConstruida) : undefined,
+        tipoEstrutura: tipoEstrutura || undefined,
+        hasExtintores: hasExtintores || undefined,
+        hasIluminacaoEmerg: hasIluminacaoEmerg || undefined,
+        hasSinalizacaoEmerg: hasSinalizacaoEmerg || undefined,
+        hasHidrantes: hasHidrantes || undefined,
+        hasSprinklers: hasSprinklers || undefined,
+        possuiPPCI: possuiPPCI || undefined,
+        memorialResumo: memorialResumo.trim() || undefined,
       };
 
       const result = await dynamodb.processes.create(processData);
@@ -1176,6 +1336,18 @@ _Sistema SGVP - Gestão de Vistorias_`;
         responsible_id: user.id,
         responsible_name: "Usuário",
       });
+
+      // Registrar boleto na timeline se gerado
+      if (boletoUrl) {
+        await dynamodb.history.create({
+          process_id: processId,
+          status: "aguardando_pagamento",
+          step_status: "in_progress",
+          observations: `Boleto gerado — disponível na Timeline. Código de referência: ${referenceCode || "—"}.`,
+          responsible_id: user.id,
+          responsible_name: "Usuário",
+        });
+      }
 
       // Upload automático de memorial e documentos (pós-criação)
       try {
@@ -1792,45 +1964,37 @@ _Sistema SGVP - Gestão de Vistorias_`;
             {wizardStep === 1 && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">2. Taxa de Bombeiro</h3>
-                {!paymentCompleted ? (
-                  <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-4 flex flex-col items-center">
-                    <p className="text-sm"><span className="font-medium">Valor Simulado:</span> R$ {Number(taxaValor || 0).toFixed(2)}</p>
-                    <p className="text-sm"><span className="font-medium">Status:</span> {paymentCompleted ? "Boleto pago" : "Aguardando pagamento"}</p>
-                    <div className="w-48 h-48 bg-white border rounded-md flex items-center justify-center overflow-hidden">
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR Code Pix" className="w-44 h-44" />
-                      ) : (
-                        <QrCode className="w-32 h-32 text-muted-foreground" />
-                      )}
-                    </div>
-                    {referenceCode && (
-                      <p className="text-xs text-muted-foreground mt-2"><span className="font-medium">Código de Referência:</span> {referenceCode}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-2">Use o QR Code para pagar via Pix.</p>
-                    {Number(taxaValor || 0) === 0 ? (
-                      <Button className="mt-3" onClick={() => { setPaymentCompleted(true); setWizardStep((prev) => Math.min(prev + 1, 4)); }} disabled={processingPayment}>
-                        {processingPayment ? "Processando..." : "Confirmar isenção"}
-                      </Button>
-                    ) : (
-                      <Button className="mt-3" onClick={simulatePayment} disabled={processingPayment}>
-                        {processingPayment ? "Processando pagamento..." : "Confirmar pagamento"}
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                    <p className="text-sm text-green-800">Pagamento efetuado com sucesso.</p>
-                  </div>
-                )}
+                <h4 className="text-base font-medium">🏙️ Escolha a cidade onde está localizado o seu estabelecimento</h4>
+                <p className="text-sm text-muted-foreground">Selecione abaixo a cidade correspondente à localização do seu imóvel ou empresa.</p>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cidadeEstabelecimento">Cidade do estabelecimento *</Label>
+                  <select
+                    id="cidadeEstabelecimento"
+                    className="border rounded-md h-9 px-2 bg-background text-sm"
+                    value={cidadeEstabelecimento}
+                    onChange={(e) => setCidadeEstabelecimento(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecione uma cidade...</option>
+                    <option value="Recife">Recife</option>
+                    <option value="Olinda">Olinda</option>
+                    <option value="Jaboatão dos Guararapes">Jaboatão dos Guararapes</option>
+                    <option value="Paulista">Paulista</option>
+                    <option value="Camaragibe">Camaragibe</option>
+                    <option value="Cabo de Santo Agostinho">Cabo de Santo Agostinho</option>
+                    <option value="Igarassu">Igarassu</option>
+                    <option value="Abreu e Lima">Abreu e Lima</option>
+                  </select>
+                </div>
               </div>
             )}
 
             {/* Passo 3: Endereço */}
             {wizardStep === 2 && (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold">3. Endereço</h3>
-                <p className="text-sm text-muted-foreground">Preencha os dados do imóvel. O endereço será preenchido automaticamente pelo CEP quando possível.</p>
+                <h3 className="text-sm font-semibold">3. Endereço do Estabelecimento</h3>
+                <p className="text-sm text-muted-foreground">Preencha os campos abaixo com o endereço completo do local para o qual está sendo solicitado o Atestado de Regularidade. Todos os campos marcados com * são obrigatórios.</p>
 
                 <div className="grid md:grid-cols-3 gap-4">
                   <div className="space-y-2">
@@ -1862,21 +2026,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
                     <p className="text-xs text-muted-foreground">Ao informar 8 dígitos, você pode buscar na ViaCEP.</p>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="uf">Estado (UF) *</Label>
-                    <select
-                      id="uf"
-                      className="border rounded-md h-10 px-3 bg-background"
-                      value={uf}
-                      onChange={async (e) => { setUf(e.target.value); await loadMunicipiosByUF(e.target.value); }}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RO','RS','RR','SC','SE','SP','TO'].map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                  </div>
+
 
                   <div className="space-y-2 md:col-span-1">
                     <Label htmlFor="cidade">Cidade *</Label>
@@ -2023,6 +2173,11 @@ _Sistema SGVP - Gestão de Vistorias_`;
                   </div>
                 </div>
 
+                {uf && uf !== 'PE' && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-900">
+                    ⚠️ Verifique se o endereço está dentro do estado de Pernambuco.
+                  </div>
+                )}
                 <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-3 text-xs text-muted-foreground">
                   IBGE: {ibgeMunicipioId ? `Município ${ibgeMunicipioId}` : '—'} • UF: {uf || '—'} • CEP: {cep || '—'}
                 </div>
@@ -2033,309 +2188,264 @@ _Sistema SGVP - Gestão de Vistorias_`;
             {wizardStep === 3 && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold">4. Memorial Preliminar</h3>
-                <p className="text-sm text-muted-foreground">Requisitos variam conforme o risco: {getGlobalRiskKey() ? `Risco ${getGlobalRiskKey()}` : '—'}.</p>
+                <p className="text-sm text-muted-foreground">Informe os dados técnicos referentes ao condomínio, ocupação e estrutura física do estabelecimento. Os campos marcados com * são de preenchimento obrigatório.</p>
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="tipoAtividade">Tipo de atividade desenvolvida {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                    <Input id="tipoAtividade" value={tipoAtividade} onChange={(e) => setTipoAtividade(e.target.value)} required={getGlobalRiskKey() !== 'I'} />
+                    <Label htmlFor="riscoOcupacao">Risco da Ocupação *</Label>
+                    <select
+                      id="riscoOcupacao"
+                      className="border rounded-md h-10 px-3 bg-background"
+                      value={riscoOcupacao}
+                      onChange={(e) => setRiscoOcupacao(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      <option value="COMERCIAL">COMERCIAL</option>
+                      <option value="INDUSTRIAL">INDUSTRIAL</option>
+                      <option value="RESIDENCIAL">RESIDENCIAL</option>
+                      <option value="PÚBLICA">PÚBLICA</option>
+                    </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="qtdPavimentos">Quantidade de pavimentos {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                    <Input id="qtdPavimentos" type="number" min={0} value={qtdPavimentos as number | ''} onChange={(e) => setQtdPavimentos(Number(e.target.value) || '')} required={getGlobalRiskKey() !== 'I'} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="areaTotalConstruida">Área total construída (m²) {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                    <Input id="areaTotalConstruida" type="number" min={0} value={areaTotalConstruida as number | ''} onChange={(e) => setAreaTotalConstruida(Number(e.target.value) || '')} required={getGlobalRiskKey() !== 'I'} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tipoEstrutura">Tipo de estrutura da edificação {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                    <Input id="tipoEstrutura" value={tipoEstrutura} onChange={(e) => setTipoEstrutura(e.target.value)} required={getGlobalRiskKey() !== 'I'} />
+                    <Label htmlFor="areaTotalConstruida">Área Construída Declarada (m²) *</Label>
+                    <Input id="areaTotalConstruida" type="number" step="0.01" min={0} value={areaTotalConstruida as number | ''} onChange={(e) => setAreaTotalConstruida(Number(e.target.value) || '')} required />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Sistema de proteção contra incêndio existente {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <div>
-                      <Label>Extintores {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="extintores" value="sim" checked={hasExtintores === 'sim'} onChange={() => setHasExtintores('sim')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Sim</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="extintores" value="nao" checked={hasExtintores === 'nao'} onChange={() => setHasExtintores('nao')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Não</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Iluminação de emergência {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="iluminacao" value="sim" checked={hasIluminacaoEmerg === 'sim'} onChange={() => setHasIluminacaoEmerg('sim')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Sim</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="iluminacao" value="nao" checked={hasIluminacaoEmerg === 'nao'} onChange={() => setHasIluminacaoEmerg('nao')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Não</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Sinalização de emergência {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="sinalizacao" value="sim" checked={hasSinalizacaoEmerg === 'sim'} onChange={() => setHasSinalizacaoEmerg('sim')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Sim</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="sinalizacao" value="nao" checked={hasSinalizacaoEmerg === 'nao'} onChange={() => setHasSinalizacaoEmerg('nao')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Não</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Hidrantes {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="hidrantes" value="sim" checked={hasHidrantes === 'sim'} onChange={() => setHasHidrantes('sim')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Sim</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="hidrantes" value="nao" checked={hasHidrantes === 'nao'} onChange={() => setHasHidrantes('nao')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Não</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Sprinklers {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="sprinklers" value="sim" checked={hasSprinklers === 'sim'} onChange={() => setHasSprinklers('sim')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Sim</span>
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="radio" name="sprinklers" value="nao" checked={hasSprinklers === 'nao'} onChange={() => setHasSprinklers('nao')} required={getGlobalRiskKey() !== 'I'} />
-                          <span>Não</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Possui PPCI (Plano de Prevenção e Combate a Incêndio)? {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
+                  <Label>É condomínio? *</Label>
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2">
-                      <input type="radio" name="ppci" value="sim" checked={possuiPPCI === 'sim'} onChange={() => setPossuiPPCI('sim')} required={getGlobalRiskKey() !== 'I'} />
+                      <input type="radio" name="condominio" value="sim" checked={isCondominio === 'sim'} onChange={() => setIsCondominio('sim')} required />
                       <span>Sim</span>
                     </label>
                     <label className="flex items-center gap-2">
-                      <input type="radio" name="ppci" value="nao" checked={possuiPPCI === 'nao'} onChange={() => setPossuiPPCI('nao')} required={getGlobalRiskKey() !== 'I'} />
+                      <input type="radio" name="condominio" value="nao" checked={isCondominio === 'nao'} onChange={() => setIsCondominio('nao')} required />
+                      <span>Não</span>
+                    </label>
+                  </div>
+                  {isCondominio === 'sim' && (
+                    <div className="grid md:grid-cols-2 gap-4 mt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="condominioNome">Nome do condomínio</Label>
+                        <Input id="condominioNome" value={condominioNome} onChange={(e) => setCondominioNome(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="condominioDoc">CNPJ/CPF do condomínio</Label>
+                        <Input id="condominioDoc" value={condominioDoc} onChange={(e) => handleCondominioDocChange(e.target.value)} placeholder="00.000.000/0000-00 ou 000.000.000-00" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="alturaEdificacao">Altura da Edificação (m) *</Label>
+                    <Input id="alturaEdificacao" type="number" min={0} value={alturaEdificacao as number | ''} onChange={(e) => setAlturaEdificacao(Number(e.target.value) || '')} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="qtdPavimentos">Número de pavimentos (inclui térreo e mezanino) *</Label>
+                    <Input id="qtdPavimentos" type="number" min={0} value={qtdPavimentos as number | ''} onChange={(e) => setQtdPavimentos(Number(e.target.value) || '')} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="capacidadeFisica">Capacidade Física, Pessoas *</Label>
+                    <Input id="capacidadeFisica" type="number" min={0} value={capacidadeFisica as number | ''} onChange={(e) => setCapacidadeFisica(Number(e.target.value) || '')} required />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tem central de gás (GLP) instalada? *</Label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="glp" value="sim" checked={centralGLPInstalada === 'sim'} onChange={() => setCentralGLPInstalada('sim')} required />
+                      <span>Sim</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="glp" value="nao" checked={centralGLPInstalada === 'nao'} onChange={() => setCentralGLPInstalada('nao')} required />
+                      <span>Não</span>
+                    </label>
+                  </div>
+                  {centralGLPInstalada === 'sim' && (
+                    <div className="grid md:grid-cols-2 gap-4 mt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="numBotijoesGLP">Nº de botijões de gás (GLP) (Kg)</Label>
+                        <Input id="numBotijoesGLP" type="number" min={0} value={numBotijoesGLP as number | ''} onChange={(e) => setNumBotijoesGLP(Number(e.target.value) || '')} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>O ponto de gás existe?</Label>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-2">
+                            <input type="radio" name="pontoGas" value="sim" checked={pontoGasExiste === 'sim'} onChange={() => setPontoGasExiste('sim')} />
+                            <span>Sim</span>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input type="radio" name="pontoGas" value="nao" checked={pontoGasExiste === 'nao'} onChange={() => setPontoGasExiste('nao')} />
+                            <span>Não</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Trabalha com explosivos ou produtos perigosos? *</Label>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="explosivos" value="sim" checked={trabalhaExplosivos === 'sim'} onChange={() => setTrabalhaExplosivos('sim')} required />
+                        <span>Sim</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="explosivos" value="nao" checked={trabalhaExplosivos === 'nao'} onChange={() => setTrabalhaExplosivos('nao')} required />
+                        <span>Não</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Existe sistema fixo? *</Label>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="sistemaFixo" value="sim" checked={existeSistemaFixo === 'sim'} onChange={() => setExisteSistemaFixo('sim')} required />
+                        <span>Sim</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="sistemaFixo" value="nao" checked={existeSistemaFixo === 'nao'} onChange={() => setExisteSistemaFixo('nao')} required />
+                        <span>Não</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="numeroProjeto">Número do Projeto no Memorial Aprovado ou Termo de Permissão</Label>
+                    <Input id="numeroProjeto" value={numeroProjeto} onChange={(e) => setNumeroProjeto(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="observacoesGerais">Observações Gerais</Label>
+                    <Textarea id="observacoesGerais" value={observacoesGerais} onChange={(e) => setObservacoesGerais(e.target.value)} placeholder="Informações adicionais" />
+                  </div>
+                </div>
+
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-900">
+                  Se não possuir projeto de segurança aprovado, deverá providenciar a confecção do projeto de segurança do estabelecimento e voltar ao portal...
+                </div>
+              </div>
+            )}
+
+            {/* Passo 5: Finalização */}
+            {wizardStep === 4 && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold">5. Finalização</h3>
+                <p className="text-sm text-muted-foreground">Revise os dados finais, aceite o termo e gere o boleto, se aplicável.</p>
+
+                {/* Resumo read-only */}
+                <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-4">
+                  <div className="grid md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Tipo de Risco do Imóvel</p>
+                      <p className="font-medium">{(() => { const k = getGlobalRiskKey(); return k === 'I' ? 'BAIXO' : k === 'II' ? 'MÉDIO' : k === 'III' ? 'ALTO' : k === 'IV' ? 'MUITO ALTO' : '—'; })()}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Isenção de Pagamento</p>
+                      <p className="font-medium">{isento ? 'Sim' : 'Não'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Valor da Taxa</p>
+                      <p className="font-medium">R$ {Number(taxaValor || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Tipo de taxa</p>
+                      <p className="font-medium">Taxa de Atestado de Regularidade</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Junto de Pagamento? */}
+                <div className="space-y-2">
+                  <Label>Junto de Pagamento? *</Label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="juntoPagamento" value="sim" checked={juntoPagamento === 'sim'} onChange={() => setJuntoPagamento('sim')} required />
+                      <span>Sim</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="radio" name="juntoPagamento" value="nao" checked={juntoPagamento === 'nao'} onChange={() => setJuntoPagamento('nao')} required />
                       <span>Não</span>
                     </label>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="memorialFile">Upload de arquivo memorial técnico (PDF ou DOC) {getGlobalRiskKey() === 'I' ? '' : '*'} </Label>
-                  <Input id="memorialFile" type="file" accept=".pdf,.doc,.docx" onChange={(e) => setMemorialFile(e.target.files?.[0] || null)} required={getGlobalRiskKey() !== 'I'} />
-                  {getGlobalRiskKey() === 'I' && (
-                    <div className="space-y-2 mt-2">
-                      <Label htmlFor="memorialResumo">Resumo simples *</Label>
-                      <Textarea id="memorialResumo" placeholder="Descreva brevemente a atividade e medidas de segurança." value={memorialResumo} onChange={(e) => setMemorialResumo(e.target.value)} required />
+                {/* Termo de Responsabilidade */}
+                <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <input id="termoResp" type="checkbox" className="mt-1 h-4 w-4" checked={termoResponsabilidadeAceito} onChange={(e) => setTermoResponsabilidadeAceito(e.target.checked)} required />
+                    <div>
+                      <Label htmlFor="termoResp">Termo de Responsabilidade *</Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Declaro, sob responsabilidade, que as informações prestadas são verdadeiras e que estou ciente das obrigações legais referentes à segurança contra incêndio e pânico.
+                      </p>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {/* Passo 5: Documentos */}
-            {wizardStep === 4 && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold">5. Documentos</h3>
-                <p className="text-sm text-muted-foreground">PDF/JPG/JPEG/PNG — máx. 10MB. Os arquivos serão enviados após criar o processo.</p>
+                {/* Mensagens informativas */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-900">
+                  <p>Obs.: O processo só poderá entrar em avaliação no máximo 3 vezes e ultrapassado o limite, será necessária nova solicitação (CODSCIP).</p>
+                  <p className="mt-2">Obs.: Com todas as informações inseridas corretamente, clique em Gerar Boleto para emitir a guia de pagamento.</p>
+                </div>
 
-                {(() => {
-                  const riskKey = getGlobalRiskKey();
-                  const allMandatorySelected = riskKey === "I" ? true : (docObrigatorios.length > 0 && docObrigatorios.every(d => !!d.arquivo));
-                  return (
-                    <>
-                      {riskKey === "I" ? (
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                          Etapa não aplicável para Risco I. Nenhum documento obrigatório.
-                        </div>
-                      ) : (
-                        <>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">Documentos obrigatórios</p>
-                            <div className="space-y-2">
-                              {docObrigatorios.map((d) => {
-                                const isImage = d.arquivo?.type.startsWith("image/");
-                                const isPdf = d.arquivo?.type === "application/pdf";
-                                const statusClass = d.status === "enviado" ? "text-green-600" : d.status === "enviando" ? "text-yellow-600" : d.status === "erro" ? "text-red-600" : "text-red-600";
-                                return (
-                                  <div key={d.id} className="flex items-center justify-between border rounded-md p-2">
-                                    <div className="flex items-center gap-3">
-                                      {d.preview ? (
-                                        isImage ? <img src={d.preview} alt={d.nome} className="w-10 h-10 rounded object-cover" /> :
-                                        isPdf ? <FileIcon className="w-10 h-10 text-muted-foreground" /> :
-                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
-                                      ) : (
-                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
-                                      )}
-                                      <div>
-                                        <p className="text-sm font-medium">{d.nome}</p>
-                                        <p className={`text-xs ${statusClass}`}>{d.status === "pendente" ? "🔴 Pendente" : d.status === "enviando" ? "🟡 Enviando" : d.status === "enviado" ? "🟢 Enviado" : "❌ Erro"}</p>
-                                        {d.arquivo?.name && <p className="text-xs text-muted-foreground">{d.arquivo.name}</p>}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" id={`file-${d.id}`} className="hidden" onChange={(e) => setDocFile(d.id, e.target.files?.[0] || null)} />
-                                      <Button variant="secondary" size="sm" onClick={() => document.getElementById(`file-${d.id}`)?.click()} title="Enviar ou substituir">
-                                        <Upload className="w-4 h-4 mr-1" /> Upload
-                                      </Button>
-                                      {d.preview && (isImage || isPdf) && (
-                                        <Button variant="ghost" size="sm" onClick={() => d.preview && window.open(d.preview, "_blank")} title="Visualizar">
-                                          <Eye className="w-4 h-4 mr-1" /> Ver
-                                        </Button>
-                                      )}
-                                      <Button variant="ghost" size="sm" onClick={() => removeDocItem(d.id)} title="Remover">
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 mt-4">
-                            <p className="text-sm font-medium">Documentos opcionais</p>
-                            <div className="space-y-2">
-                              {docOpcionais.map((d) => {
-                                const isImage = d.arquivo?.type.startsWith("image/");
-                                const isPdf = d.arquivo?.type === "application/pdf";
-                                const statusClass = d.status === "enviado" ? "text-green-600" : d.status === "enviando" ? "text-yellow-600" : d.status === "erro" ? "text-red-600" : "text-muted-foreground";
-                                return (
-                                  <div key={d.id} className="flex items-center justify-between border rounded-md p-2">
-                                    <div className="flex items-center gap-3">
-                                      {d.preview ? (
-                                        isImage ? <img src={d.preview} alt={d.nome} className="w-10 h-10 rounded object-cover" /> :
-                                        isPdf ? <FileIcon className="w-10 h-10 text-muted-foreground" /> :
-                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
-                                      ) : (
-                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
-                                      )}
-                                      <div>
-                                        <p className="text-sm">{d.nome}</p>
-                                        {d.arquivo?.name && <p className="text-xs text-muted-foreground">{d.arquivo.name}</p>}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" id={`file-${d.id}`} className="hidden" onChange={(e) => setDocFile(d.id, e.target.files?.[0] || null)} />
-                                      <Button variant="secondary" size="sm" onClick={() => document.getElementById(`file-${d.id}`)?.click()} title="Enviar ou substituir">
-                                        <Upload className="w-4 h-4 mr-1" /> Upload
-                                      </Button>
-                                      {d.preview && (isImage || isPdf) && (
-                                        <Button variant="ghost" size="sm" onClick={() => d.preview && window.open(d.preview, "_blank")} title="Visualizar">
-                                          <Eye className="w-4 h-4 mr-1" /> Ver
-                                        </Button>
-                                      )}
-                                      <Button variant="ghost" size="sm" onClick={() => removeDocItem(d.id)} title="Remover">
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {docUploading && <Progress value={docUploadProgress} className="mt-4" />}
-                          {!allMandatorySelected && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 mt-2">
-                              Envie todos os documentos obrigatórios para continuar.
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {/* Outros anexos (opcionais) via arrastar/soltar */}
-                      <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-4 mt-4">
-                        <div
-                          {...getRootProps()}
-                          className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer ${isDragActive ? "bg-primary/5 border-primary" : "bg-muted/50"}`}
-                        >
-                          <input {...getInputProps()} />
-                          <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                            <Upload className="w-4 h-4" />
-                            <span>Outros anexos: arraste/solte ou clique para selecionar</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-2">PDF/JPG/JPEG/PNG — máx. 10MB</p>
-                        </div>
-
-                        {pendingDocs.length > 0 && (
-                          <div className="mt-4 space-y-2">
-                            <p className="text-sm font-medium">Anexos pendentes ({pendingDocs.length})</p>
-                            <div className="space-y-2">
-                              {pendingDocs.map((f) => {
-                                const preview = docPreviews[f.name];
-                                const isImage = f.type.startsWith("image/");
-                                const isPdf = f.type === "application/pdf";
-                                return (
-                                  <div key={f.name} className="flex items-center justify-between border rounded-md p-2">
-                                    <div className="flex items-center gap-3">
-                                      {preview ? (
-                                        isImage ? <img src={preview} alt={f.name} className="w-10 h-10 rounded object-cover" /> :
-                                        isPdf ? <FileIcon className="w-10 h-10 text-muted-foreground" /> :
-                                        <FileIcon className="w-10 h-10 text-muted-foreground" />
-                                      ) : (
-                                        isImage ? <ImageIcon className="w-10 h-10 text-muted-foreground" /> : <FileIcon className="w-10 h-10 text-muted-foreground" />
-                                      )}
-                                      <div>
-                                        <p className="text-sm font-medium">{f.name}</p>
-                                        <p className="text-xs text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <select
-                                        className="border rounded-md h-9 px-2 bg-background text-sm"
-                                        value={docTypeByName[f.name] || ""}
-                                        onChange={(e) => setDocTypeByName(prev => ({ ...prev, [f.name]: e.target.value }))}
-                                      >
-                                        <option value="">Tipo de documento</option>
-                                        <option value="Cópia do CNPJ">Cópia do CNPJ</option>
-                                        <option value="Planta baixa (PDF)">Planta baixa (PDF)</option>
-                                        <option value="ART/RRT do responsável">ART/RRT do responsável</option>
-                                        <option value="Comprovante de pagamento da taxa">Comprovante de pagamento da taxa</option>
-                                        <option value="Laudo técnico">Laudo técnico</option>
-                                      </select>
-                                      {(isImage || isPdf) && preview && (
-                                        <Button variant="ghost" size="sm" onClick={() => window.open(preview, "_blank")}>
-                                          <Eye className="w-4 h-4 mr-1" /> Ver
-                                        </Button>
-                                      )}
-                                      <Button variant="ghost" size="sm" onClick={() => clearPendingDoc(f.name)}>
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
+                {/* Bloco de pagamento automático */}
+                {!isento && (
+                  <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-4">
+                    <h4 className="text-sm font-medium mb-3">Pagamento</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span>Valor a pagar:</span>
+                        <span className="font-medium">R$ {Number(taxaValor || 0).toFixed(2)}</span>
                       </div>
-
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-                        Após criar o processo, os documentos serão enviados e ficarão com status “⏳ Em análise”. Você poderá acompanhar e reenviar se necessário.
+                      <div className="flex items-center justify-between">
+                        <span>Tipo de taxa:</span>
+                        <span className="font-medium">Taxa de Atestado de Regularidade</span>
                       </div>
-                    </>
-                  );
-                })()}
+                    </div>
+                    <Button
+                      type="button"
+                      className="mt-3 w-full"
+                      onClick={async () => {
+                        // Gera QR se não existir
+                        let qrUrl = qrDataUrl;
+                        const valor = Number(taxaValor || 0);
+                        if (!qrUrl) {
+                          try {
+                            qrUrl = await QRCode.toDataURL(`pix://pagamento?valor=${valor}`);
+                          } catch {}
+                        }
+                        const code = referenceCode || `CBMPE-${getGlobalRiskKey() || 'X'}-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0,14)}`;
+                        const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Boleto - Taxa de Atestado</title><style>body{font-family:Arial, sans-serif;padding:24px} .box{border:1px solid #ddd;border-radius:8px;padding:16px;margin-top:8px} .row{display:flex;justify-content:space-between;margin:8px 0} .qr{margin-top:12px;text-align:center}</style></head><body><h2>Boleto de Pagamento</h2><div class="box"><div class="row"><span>Valor da taxa</span><strong>R$ ${valor.toFixed(2)}</strong></div><div class="row"><span>Solicitante</span><strong>${companyName || '-'}</strong></div><div class="row"><span>CPF/CNPJ</span><strong>${String(cnpj || '').replace(/\D/g,'')}</strong></div><div class="row"><span>Código do processo</span><strong>${code}</strong></div><div class="row"><span>Status</span><strong>Aguardando Pagamento</strong></div><div class="qr"><img alt="QR Code" src="${qrUrl || ''}" style="width:160px;height:160px"/></div></div></body></html>`;
+                        const base64 = btoa(unescape(encodeURIComponent(html)));
+                        const url = `data:text/html;base64,${base64}`;
+                        setBoletoUrl(url);
+                        setBoletoGerado(true);
+                        window.open(url, "_blank");
+                        toast({ title: "Boleto gerado", description: "Boleto mockado aberto em nova aba." });
+                      }}
+                    >
+                      Gerar Boleto
+                    </Button>
+                  </div>
+                )}
+
+                {/* Status orientativo */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                  {isento
+                    ? "Processo isento. Conclua a solicitação para registrar no sistema."
+                    : boletoGerado
+                      ? "Boleto gerado. Conclua a solicitação para registrar e vincular ao processo."
+                      : "Gere o boleto para prosseguir ou conclua se isento."}
+                </div>
               </div>
             )}
 
@@ -2359,13 +2469,24 @@ _Sistema SGVP - Gestão de Vistorias_`;
                       const ok = validateAddressStep();
                       if (!ok) return;
                     }
+                    if (wizardStep === 3) {
+                      const ok2 = validateMemorialStep();
+                      if (!ok2) return;
+                    }
+                    if (wizardStep === 1 && !cidadeEstabelecimento) {
+                      toast({
+                        title: "Selecione a cidade",
+                        description: "Escolha a cidade do estabelecimento para continuar.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
                     setWizardStep((prev) => {
                       const next = Math.min(steps.length - 1, prev + 1);
-                      if (next > 1 && !paymentCompleted) return 1;
                       return next;
                     });
                   }}
-                  disabled={wizardStep === steps.length - 1 || (wizardStep === 1 && !paymentCompleted)}
+                  disabled={wizardStep === steps.length - 1}
                 >
                   Avançar
                 </Button>
@@ -2376,7 +2497,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
               type="submit"
               className="w-full bg-gradient-primary"
               size="lg"
-              disabled={loading || wizardStep !== steps.length - 1 || ((getGlobalRiskKey() !== "I") && !(docObrigatorios.length > 0 && docObrigatorios.every(d => !!d.arquivo)))}
+              disabled={loading || wizardStep !== steps.length - 1 || !termoResponsabilidadeAceito || !juntoPagamento || ((getGlobalRiskKey() !== "I") && !(isento || boletoGerado))}
             >
               {loading ? (
                 <>
@@ -2384,7 +2505,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
                   Criando...
                 </>
               ) : (
-                "Criar Processo"
+                "Concluir Solicitação"
               )}
             </Button>
           </form>

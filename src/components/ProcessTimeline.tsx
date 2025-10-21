@@ -63,12 +63,11 @@ interface ProcessTimelineProps {
 }
 
 const timelineSteps: TimelineStep[] = [
-  { status: "cadastro", label: "Cadastro", icon: FilePlus },
+  { status: "cadastro", label: "Entrada", icon: FilePlus },
   { status: "triagem", label: "Triagem", icon: SearchCheck },
+  { status: "comissao", label: "Alocação de Viabilidade", icon: Users },
   { status: "vistoria", label: "Vistoria", icon: ClipboardList },
-  { status: "comissao", label: "Comissão", icon: Users },
-  { status: "aprovacao", label: "Aprovação Final", icon: CheckCircle },
-  { status: "concluido", label: "Concluído", icon: Award },
+  { status: "aprovacao", label: "Emissão AVCB", icon: CheckCircle },
 ];
 
 export const ProcessTimeline = ({ currentStatus, history = [], className, mode = "user", attachments = [], onPreviewDoc, onDownloadDoc, onSelectStage }: ProcessTimelineProps) => {
@@ -104,12 +103,12 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   // Filtra anexos relevantes para uma etapa específica
   const getStepAttachments = (status: ProcessStatus) => {
     if (!attachments || attachments.length === 0) return [] as AttachedDoc[];
-    // Para a etapa concluído: mostrar certificado final e quaisquer anexos marcados com stage 'concluido'
-    if (status === "concluido") {
+    // Emissão AVCB: mostrar certificado final e anexos marcados para aprovação (compatível com registros antigos em 'concluido')
+    if (status === "aprovacao") {
       return attachments.filter((doc) => {
         const isFinalCert = doc.document_type === "certificado_final" && doc.status === "completed" && (mode === "admin" || !!doc.disponivel_usuario);
-        const isMarkedConcluded = (doc.stage || "") === "concluido";
-        return isFinalCert || isMarkedConcluded;
+        const isMarkedApproval = ["aprovacao", "concluido"].includes((doc.stage || ""));
+        return isFinalCert || isMarkedApproval;
       });
     }
     // Demais etapas: por ora não exibir anexos (reduz ruído)
@@ -213,7 +212,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
                   className={cn(
                     "relative z-10 flex items-center justify-center rounded-full transition-all duration-300 border-2",
                     isCompleted && "bg-green-600 text-white border-green-600",
-                    isCurrent && !isExigencia && "bg-yellow-500 text-black border-yellow-500 ring-4 ring-yellow-500/30 scale-105",
+                    isCurrent && !isExigencia && "bg-blue-600 text-white border-blue-600 ring-4 ring-blue-600/30 scale-105",
                     isExigencia && "bg-red-600 text-white border-red-600 ring-4 ring-red-600/20",
                     !isCompleted && !isCurrent && !isExigencia && "bg-muted text-muted-foreground border-muted-foreground/20",
                     isCurrent ? (isAdmin ? "w-14 h-14 md:w-16 md:h-16" : "w-16 h-16") : (isAdmin ? "w-12 h-12 md:w-14 md:h-14" : "w-14 h-14")
@@ -377,4 +376,24 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
       </div>
     </Card>
   );
+};
+
+const tooltipTextUser: Record<ProcessStatus, string> = {
+  cadastro: "Etapa inicial: dados enviados e aguardando pagamento.",
+  triagem: "Análise documental e técnica preliminar.",
+  vistoria: "Agendamento e realização da vistoria in loco.",
+  comissao: "Alocação da viabilidade e distribuição técnica.",
+  aprovacao: "Emissão e liberação do AVCB.",
+  concluido: "Processo finalizado / emitido. Documento disponível.",
+  exigencia: "Há exigências pendentes para correção.",
+};
+
+const tooltipTextAdmin: Record<ProcessStatus, string> = {
+  cadastro: "Processo criado. Aguardando pagamento (Entrada).",
+  triagem: "Verifique documentos e dados na triagem.",
+  vistoria: "Executar análise técnica/campo e vistoria.",
+  comissao: "Distribuir viabilidade e encaminhar equipe.",
+  aprovacao: "Emitir e homologar o documento final (AVCB).",
+  concluido: "Processo finalizado / emitido para o usuário.",
+  exigencia: "Processo em exigência. Aguardando usuário.",
 };

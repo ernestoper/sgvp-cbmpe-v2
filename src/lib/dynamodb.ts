@@ -16,6 +16,59 @@ export interface Process {
   current_status: 'cadastro' | 'triagem' | 'vistoria' | 'comissao' | 'aprovacao' | 'concluido' | 'exigencia';
   created_at: string;
   updated_at: string;
+  // Campos de contato
+  contact_name?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  // Etapa 1 – Ocupação
+  coscip_principal?: {
+    cnae?: string;
+    categoria?: string;
+    vistoria?: string;
+    taxa?: number;
+    observacao?: string;
+  };
+  coscip_secundarios?: Array<{
+    cnae: string;
+    descricao_cnae?: string;
+    coscip_categoria?: string;
+    vistoria?: string;
+    observacao?: string;
+    taxa?: number;
+  }>;
+  // Etapa 2 – Taxa de Bombeiro
+  taxa_bombeiro_valor?: number;
+  taxa_bombeiro_pago?: boolean;
+  // Etapa 3 – Endereço estruturado
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  areaConstruida?: number;
+  tipoImovel?: string;
+  multiPavimentos?: string;
+  pontoReferencia?: string;
+  areaTerreno?: number;
+  latitude?: number;
+  longitude?: number;
+  tipoLogradouro?: string;
+  acessoPublico?: string;
+  observacoesEndereco?: string;
+  // Etapa 4 – Memorial Preliminar
+  tipoAtividade?: string;
+  qtdPavimentos?: number;
+  areaTotalConstruida?: number;
+  tipoEstrutura?: string;
+  hasExtintores?: string;
+  hasIluminacaoEmerg?: string;
+  hasSinalizacaoEmerg?: string;
+  hasHidrantes?: string;
+  hasSprinklers?: string;
+  possuiPPCI?: string;
+  memorialResumo?: string;
 }
 
 export interface ProcessHistory {

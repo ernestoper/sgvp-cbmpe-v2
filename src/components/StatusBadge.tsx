@@ -16,6 +16,7 @@ import {
 
 type ProcessStatus = 
   | "cadastro" 
+  | "aguardando_pagamento"
   | "triagem" 
   | "vistoria" 
   | "comissao" 
@@ -32,8 +33,13 @@ interface StatusBadgeProps {
 
 const processStatusConfig = {
   cadastro: {
-    label: "Cadastro",
+    label: "Entrada",
     icon: FilePlus,
+    variant: "secondary" as const,
+  },
+  aguardando_pagamento: {
+    label: "Aguardando Pagamento",
+    icon: Clock,
     variant: "secondary" as const,
   },
   triagem: {
@@ -47,17 +53,17 @@ const processStatusConfig = {
     variant: "default" as const,
   },
   comissao: {
-    label: "Comissão",
+    label: "Alocação de Viabilidade",
     icon: Users,
     variant: "default" as const,
   },
   aprovacao: {
-    label: "Aprovação Final",
+    label: "Emissão AVCB",
     icon: CheckCircle,
     variant: "default" as const,
   },
   concluido: {
-    label: "Concluído",
+    label: "Emitido",
     icon: Award,
     variant: "default" as const,
   },

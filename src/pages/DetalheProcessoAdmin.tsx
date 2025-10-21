@@ -35,6 +35,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { StampModal } from "@/components/StampModal";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface Process {
   id: string;
@@ -50,6 +51,57 @@ interface Process {
   contact_name?: string;
   contact_phone?: string;
   contact_email?: string;
+  // Etapa 1 – Ocupação
+  cnae_principal?: string;
+  cnaes_secundarios?: string[];
+  coscip_principal?: {
+    cnae?: string;
+    categoria?: string;
+    vistoria?: string;
+    taxa?: number;
+    observacao?: string;
+  };
+  coscip_secundarios?: Array<{
+    cnae: string;
+    descricao_cnae?: string;
+    coscip_categoria?: string;
+    vistoria?: string;
+    observacao?: string;
+    taxa?: number;
+  }>;
+  // Etapa 2 – Taxa de Bombeiro
+  taxa_bombeiro_valor?: number;
+  taxa_bombeiro_pago?: boolean;
+  // Etapa 3 – Endereço estruturado
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  areaConstruida?: number;
+  tipoImovel?: string;
+  multiPavimentos?: string;
+  pontoReferencia?: string;
+  areaTerreno?: number;
+  latitude?: number;
+  longitude?: number;
+  tipoLogradouro?: string;
+  acessoPublico?: string;
+  observacoesEndereco?: string;
+  // Etapa 4 – Memorial Preliminar
+  tipoAtividade?: string;
+  qtdPavimentos?: number;
+  areaTotalConstruida?: number;
+  tipoEstrutura?: string;
+  hasExtintores?: string;
+  hasIluminacaoEmerg?: string;
+  hasSinalizacaoEmerg?: string;
+  hasHidrantes?: string;
+  hasSprinklers?: string;
+  possuiPPCI?: string;
+  memorialResumo?: string;
 }
 
 interface ProcessHistory {
@@ -197,6 +249,11 @@ const DetalheProcessoAdmin = () => {
   );
   const canAdvancePhase = stageApproved && process?.current_status !== "concluido";
 
+  // Etapa ativa para ações de documentos durante exigência (usa última etapa do histórico)
+  const stageStatuses: ProcessStatus[] = ["cadastro","triagem","vistoria","comissao","aprovacao","concluido"];
+  const lastStageInHistory = [...history].reverse().find(h => stageStatuses.includes(h.status as ProcessStatus))?.status as ProcessStatus | undefined;
+  const activeStageForActions: ProcessStatus = currentStage === "exigencia" ? (lastStageInHistory || "triagem") : currentStage;
+
   // Quando o processo carregar/alterar, sincroniza etapa selecionada com etapa atual
   useEffect(() => {
     if (process) {
@@ -298,33 +355,30 @@ const DetalheProcessoAdmin = () => {
 
   const handleDownload = async (doc: ProcessDocument) => {
     try {
-      const path = doc.file_url.startsWith("http")
-        ? (doc.file_url.split("/process-documents/")[1] || doc.file_url)
-        : doc.file_url;
+      let downloadUrl = doc.file_url;
 
-      const { data: signed, error: signErr } = await supabase.storage
-        .from('process-documents')
-        .createSignedUrl(path, 60 * 10);
+      // Se já é uma URL completa (S3 ou outra), usar diretamente
+      if (!downloadUrl.startsWith("http")) {
+        // Construir URL do S3 se variáveis estiverem definidas; caso contrário, gerar URL assinada do Supabase
+        const S3_BUCKET = import.meta.env.VITE_S3_BUCKET;
+        const S3_REGION = import.meta.env.VITE_AWS_REGION;
+        const key = doc.file_url.startsWith("process-documents/")
+          ? doc.file_url
+          : `process-documents/${doc.file_url}`;
 
-      if (!signErr && signed?.signedUrl) {
-        window.open(signed.signedUrl, '_blank');
-        return;
+        if (S3_BUCKET && S3_REGION) {
+          downloadUrl = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+        } else {
+          const { data: signed, error } = await supabase.storage
+            .from('process-documents')
+            .createSignedUrl(key, 60 * 10);
+          if (error || !signed?.signedUrl) throw error || new Error('Não foi possível gerar link de download.');
+          downloadUrl = signed.signedUrl;
+        }
       }
 
-      const { data: fileData, error: dlErr } = await supabase.storage
-        .from('process-documents')
-        .download(path);
-
-      if (dlErr || !fileData) throw dlErr || new Error('Falha ao baixar arquivo');
-
-      const url = URL.createObjectURL(fileData);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = doc.document_name || 'documento';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      // Abrir em nova aba para visualização/download pelo navegador
+      window.open(downloadUrl, '_blank');
     } catch (error: any) {
       toast({
         title: 'Erro ao baixar documento',
@@ -405,6 +459,11 @@ const DetalheProcessoAdmin = () => {
       });
       console.log('Document updated successfully');
 
+      // Atualiza estado local via map para evitar sobrescrever a lista
+      setDocuments(prev => prev.map(doc => 
+        doc.id === selectedDocument.id ? { ...doc, status: "completed", rejection_reason: null } : doc
+      ));
+
       // Add to history como atividade em análise da etapa
       console.log('Adding to history...');
       if (approveObservation.trim()) {
@@ -413,6 +472,23 @@ const DetalheProcessoAdmin = () => {
         await addToHistory("in_progress", `Documento "${selectedDocument.document_name}" aprovado`);
       }
       console.log('History added');
+
+      // Notificação de aprovação do documento
+      try {
+        if (process) {
+          const contact = getContactInfo();
+          await dispatchStatusChange({
+            processId: process.id,
+            userId: process.user_id,
+            currentStage: stepLabels[currentStage as ProcessStatus],
+            event: "approved",
+            contact,
+            documentName: selectedDocument.document_name,
+          });
+        }
+      } catch (notifyErr) {
+        console.warn("Falha ao enviar notificações de aprovação de documento:", notifyErr);
+      }
 
       toast({
         title: "Documento aprovado!",
@@ -459,6 +535,11 @@ const DetalheProcessoAdmin = () => {
       });
       console.log('Document updated successfully');
 
+      // Atualiza estado local via map para refletir reprovação
+      setDocuments(prev => prev.map(doc => 
+        doc.id === selectedDocument.id ? { ...doc, status: "rejected", rejection_reason: rejectionReason } : doc
+      ));
+
       // Update process to exigencia
       console.log('Updating process to exigencia...');
       await dynamodb.processes.update(id!, { current_status: "exigencia" });
@@ -469,7 +550,7 @@ const DetalheProcessoAdmin = () => {
       await addToHistory("rejected", `Documento "${selectedDocument.document_name}" reprovado: ${rejectionReason}`);
       console.log('History added');
 
-      // Dispara notificações de exigência (reprovação da etapa atual)
+      // Dispara notificações por documento reprovado
       try {
         if (process) {
           console.log('Sending rejection notification...');
@@ -481,6 +562,7 @@ const DetalheProcessoAdmin = () => {
             event: "rejected",
             reason: rejectionReason,
             contact,
+            documentName: selectedDocument.document_name,
           });
           console.log('Notification sent');
         }
@@ -1155,6 +1237,208 @@ const DetalheProcessoAdmin = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* Abas com Etapas 1 a 4 */}
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold mb-2">Dados do Cadastro (Etapas 1 a 4)</h3>
+                    <Tabs defaultValue="ocupacao">
+                      <TabsList>
+                        <TabsTrigger value="ocupacao">1 Ocupação</TabsTrigger>
+                        <TabsTrigger value="taxa">2 Taxa de Bombeiro</TabsTrigger>
+                        <TabsTrigger value="endereco">3 Endereço</TabsTrigger>
+                        <TabsTrigger value="memorial">4 Memorial Preliminar</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="ocupacao">
+                        <div className="grid md:grid-cols-2 gap-4 mt-3">
+                          <div>
+                            <p className="text-sm text-muted-foreground">CNAE Principal</p>
+                            <p className="font-medium">{process.cnae_principal || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">CNAEs Secundários</p>
+                            <p className="font-medium">{(process.cnaes_secundarios && process.cnaes_secundarios.length > 0) ? process.cnaes_secundarios.join(", ") : "—"}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm text-muted-foreground">COSCIP — Principal</p>
+                            <div className="text-sm mt-1 space-y-1">
+                              <p><strong>CNAE:</strong> {process.coscip_principal?.cnae || process.cnae_principal || "—"}</p>
+                              <p><strong>Categoria:</strong> {process.coscip_principal?.categoria || "—"}</p>
+                              <p><strong>Vistoria:</strong> {process.coscip_principal?.vistoria || "—"}</p>
+                              <p><strong>Taxa:</strong> {typeof process.coscip_principal?.taxa === "number" ? process.coscip_principal!.taxa.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</p>
+                              <p><strong>Observação:</strong> {process.coscip_principal?.observacao || "—"}</p>
+                            </div>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm text-muted-foreground">COSCIP — Secundários</p>
+                            {Array.isArray(process.coscip_secundarios) && process.coscip_secundarios.length > 0 ? (
+                              <div className="mt-1 space-y-2">
+                                {process.coscip_secundarios.map((c, idx) => (
+                                  <div key={idx} className="text-sm">
+                                    <p><strong>CNAE:</strong> {c.cnae}</p>
+                                    <p><strong>Categoria:</strong> {c.coscip_categoria || "—"}</p>
+                                    <p><strong>Vistoria:</strong> {c.vistoria || "—"}</p>
+                                    <p><strong>Taxa:</strong> {typeof c.taxa === "number" ? c.taxa.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</p>
+                                    <p><strong>Observação:</strong> {c.observacao || "—"}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="font-medium">—</p>
+                            )}
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="taxa">
+                        <div className="grid md:grid-cols-2 gap-4 mt-3">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Valor da Taxa</p>
+                            <p className="font-medium">
+                              {typeof process.taxa_bombeiro_valor === "number"
+                                ? process.taxa_bombeiro_valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                                : (typeof process.coscip_principal?.taxa === "number"
+                                  ? process.coscip_principal!.taxa.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                                  : "—")}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Pagamento</p>
+                            <p className="font-medium">{process.taxa_bombeiro_pago ? "Pago" : "Não pago"}</p>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="endereco">
+                        <div className="grid md:grid-cols-2 gap-4 mt-3">
+                          <div className="md:col-span-2">
+                            <p className="text-sm text-muted-foreground">Endereço (texto livre)</p>
+                            <p className="font-medium">{process.address || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">CEP</p>
+                            <p className="font-medium">{process.cep || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Logradouro</p>
+                            <p className="font-medium">{process.logradouro || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Número</p>
+                            <p className="font-medium">{process.numero || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Complemento</p>
+                            <p className="font-medium">{process.complemento || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Bairro</p>
+                            <p className="font-medium">{process.bairro || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Cidade</p>
+                            <p className="font-medium">{process.cidade || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">UF</p>
+                            <p className="font-medium">{process.uf || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Tipo de Imóvel</p>
+                            <p className="font-medium">{process.tipoImovel || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Multi-pavimentos</p>
+                            <p className="font-medium">{process.multiPavimentos || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Área Construída (m²)</p>
+                            <p className="font-medium">{typeof process.areaConstruida === "number" ? process.areaConstruida : "—"}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm text-muted-foreground">Observações / Ponto de Referência</p>
+                            <p className="font-medium">{process.pontoReferencia || process.observacoesEndereco || "—"}</p>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="memorial">
+                        <div className="grid md:grid-cols-2 gap-4 mt-3">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Tipo de Atividade</p>
+                            <p className="font-medium">{process.tipoAtividade || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Quantidade de Pavimentos</p>
+                            <p className="font-medium">{typeof process.qtdPavimentos === "number" ? process.qtdPavimentos : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Área Total Construída (m²)</p>
+                            <p className="font-medium">{typeof process.areaTotalConstruida === "number" ? process.areaTotalConstruida : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Tipo de Estrutura</p>
+                            <p className="font-medium">{process.tipoEstrutura || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Extintores</p>
+                            <p className="font-medium">{process.hasExtintores === "sim" ? "Sim" : process.hasExtintores === "nao" ? "Não" : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Iluminação de Emergência</p>
+                            <p className="font-medium">{process.hasIluminacaoEmerg === "sim" ? "Sim" : process.hasIluminacaoEmerg === "nao" ? "Não" : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Sinalização de Emergência</p>
+                            <p className="font-medium">{process.hasSinalizacaoEmerg === "sim" ? "Sim" : process.hasSinalizacaoEmerg === "nao" ? "Não" : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Hidrantes</p>
+                            <p className="font-medium">{process.hasHidrantes === "sim" ? "Sim" : process.hasHidrantes === "nao" ? "Não" : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Sprinklers</p>
+                            <p className="font-medium">{process.hasSprinklers === "sim" ? "Sim" : process.hasSprinklers === "nao" ? "Não" : "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Possui PPCI</p>
+                            <p className="font-medium">{process.possuiPPCI === "sim" ? "Sim" : process.possuiPPCI === "nao" ? "Não" : "—"}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm text-muted-foreground">Resumo do Memorial</p>
+                            <p className="font-medium">{process.memorialResumo || "—"}</p>
+                          </div>
+
+                          {/* Documentos de Memorial (se houver) */}
+                          <div className="md:col-span-2">
+                            <p className="text-sm text-muted-foreground">Arquivos de Memorial Técnico</p>
+                            {documents && documents.filter(d => (d.document_name || '').toLowerCase().includes('memorial')).length > 0 ? (
+                              <div className="mt-2 space-y-2">
+                                {documents.filter(d => (d.document_name || '').toLowerCase().includes('memorial')).map((doc) => (
+                                  <div key={doc.id} className="flex items-center justify-between gap-2 border rounded-md p-2">
+                                    <div className="flex items-center gap-2">
+                                      {doc.document_type === 'imagem' ? <ImageIcon className="w-4 h-4" /> : (doc.document_type === 'pdf' ? <FileIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />)}
+                                      <span className="text-sm font-medium">{doc.document_name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Button variant="secondary" size="sm" onClick={() => openPreviewForDoc(doc)}>
+                                        <Eye className="w-3 h-3 mr-1" /> Ver
+                                      </Button>
+                                      <Button variant="secondary" size="sm" onClick={() => handleDownload(doc)}>
+                                        <Download className="w-3 h-3 mr-1" /> Baixar
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="font-medium">—</p>
+                            )}
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
                 </CollapsibleContent>
               </Card>
             </Collapsible>
@@ -1366,7 +1650,7 @@ const DetalheProcessoAdmin = () => {
                                   <Button
                                     size="sm"
                                     className="w-full"
-                                    disabled={(doc.stage || "cadastro") !== process.current_status}
+                                    disabled={(doc.stage || "cadastro") !== activeStageForActions}
                                     onClick={() => {
                                       setSelectedDocument(doc);
                                       setActionDialog("approve");
@@ -1376,9 +1660,9 @@ const DetalheProcessoAdmin = () => {
                                   </Button>
                                 </div>
                               </TooltipTrigger>
-                              {(doc.stage || "cadastro") !== process.current_status && (
+                              {(doc.stage || "cadastro") !== activeStageForActions && (
                                 <TooltipContent>
-                                  <p className="text-sm">Documento fora da etapa atual ({doc.stage || "cadastro"}).</p>
+                                  <p className="text-sm">Documento fora da etapa em análise ({doc.stage || "cadastro"}).</p>
                                 </TooltipContent>
                               )}
                             </Tooltip>
@@ -1387,7 +1671,7 @@ const DetalheProcessoAdmin = () => {
                             size="sm"
                             variant="destructive"
                             className="flex-1"
-                            disabled={(doc.stage || "cadastro") !== process.current_status}
+                            disabled={(doc.stage || "cadastro") !== activeStageForActions}
                             onClick={() => {
                               setSelectedDocument(doc);
                               setActionDialog("reject");

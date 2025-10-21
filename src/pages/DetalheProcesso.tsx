@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Upload, FileText, Download, Image as ImageIcon, File as FileIcon, FileSpreadsheet, Eye, Trash2, Paperclip, ShieldCheck, RefreshCw } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Download, Image as ImageIcon, File as FileIcon, FileSpreadsheet, Eye, Trash2, Paperclip, ShieldCheck, RefreshCw, Clock, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { dynamodb } from "@/lib/dynamodb";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +25,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+import { QRCodeSVG } from "qrcode.react";
+
 interface Process {
   id: string;
   process_number: string;
@@ -38,6 +40,10 @@ interface Process {
   contact_name?: string;
   contact_phone?: string;
   contact_email?: string;
+  // Pagamento / Boleto
+  taxa_bombeiro_valor?: number;
+  taxa_bombeiro_pago?: boolean;
+  boleto_url?: string;
 }
 
 interface ProcessHistory {
@@ -99,6 +105,22 @@ const DetalheProcesso = () => {
   const [versionsByDoc, setVersionsByDoc] = useState<Record<string, DocumentVersion[]>>({});
   const [hasVersionsTable, setHasVersionsTable] = useState<boolean>(true);
   const [mostrarDetalhes, setMostrarDetalhes] = useState(false);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [boletoModalOpen, setBoletoModalOpen] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [docsSubmitOpen, setDocsSubmitOpen] = useState(false);
+  const requiredDocsEntrada = [
+    { id: "identidade", nome: "Carteira de Identidade do Proprietário ou Representante Legal", obrigatorio: true, pattern: /identidad|rg|carteira/ },
+    { id: "procuracao", nome: "Procuração com Firma Reconhecida (se aplicável)", obrigatorio: false, pattern: /procuracao|procura/ },
+    { id: "cnpjcpf", nome: "Comprovante de Inscrição CNPJ/CPF", obrigatorio: true, pattern: /cnpj|cpf|inscricao/ },
+    { id: "memorial", nome: "Memorial Descritivo da Edificação", obrigatorio: true, pattern: /memorial/ },
+    { id: "ppci", nome: "Projeto de Prevenção e Combate a Incêndio (PPCI)", obrigatorio: true, pattern: /ppci|projeto/ },
+  ];
+  const findUploadedByPattern = (pattern: RegExp) => {
+    const lower = (s: string) => (s || "").toLowerCase();
+    return documents.find(d => lower(d.document_name).match(pattern) && ((d.stage || "cadastro") === "cadastro"));
+  };
+  const fileInputsByDocId = useRef<Record<string, HTMLInputElement | null>>({});
 
   // Fallback: extrai contato do histórico se colunas não existirem
   const getContactInfo = () => {
@@ -117,6 +139,12 @@ const DetalheProcesso = () => {
       return { name: name || n || "", phone: phone || p || "", email: email || e || "" };
     }
     return { name: name || "", phone: phone || "", email: email || "" };
+  };
+
+  const generateProcessNumber = () => {
+    const year = new Date().getFullYear();
+    const random = Math.floor(Math.random() * 900000) + 100000;
+    return `${year}${random}`;
   };
 
   useEffect(() => {
@@ -283,6 +311,68 @@ const DetalheProcesso = () => {
     "application/msword",
     "application/vnd.ms-excel",
   ];
+
+  const uploadDocFor = async (item: { id: string; nome: string }, file: File) => {
+     if (!id) return;
+     try {
+       const type = file.type;
+       if (!allowedTypes.includes(type) || file.size > 10 * 1024 * 1024) {
+         toast({ title: "Arquivo inválido", description: "Use PDF, JPG, PNG, DOCX ou XLSX até 10MB.", variant: "destructive" });
+         return;
+       }
+       const { storage } = await import("@/lib/storage");
+       const fileUrl = await storage.upload(file, `process-documents/${id}`);
+       const docType =
+         type.startsWith("image/") ? "imagem" :
+         type === "application/pdf" ? "pdf" :
+         type.includes("word") ? "docx" :
+         type.includes("sheet") ? "xlsx" : "arquivo";
+ 
+       await dynamodb.documents.create({
+         process_id: id,
+         document_name: item.nome,
+         document_type: docType,
+         file_url: fileUrl,
+         status: "pending",
+         stage: "cadastro",
+       } as any);
+ 
+       await fetchDocuments();
+       toast({ title: "Documento anexado", description: `${item.nome} foi anexado.` });
+     } catch (e: any) {
+       toast({ title: "Falha ao anexar", description: e?.message || "Tente novamente.", variant: "destructive" });
+     }
+   };
+ 
+   const replaceUploadedDoc = async (existing: ProcessDocument, file: File) => {
+     if (!id) return;
+     try {
+       const type = file.type;
+       if (!allowedTypes.includes(type) || file.size > 10 * 1024 * 1024) {
+         toast({ title: "Arquivo inválido", description: "Use PDF, JPG, PNG, DOCX ou XLSX até 10MB.", variant: "destructive" });
+         return;
+       }
+       const { storage } = await import("@/lib/storage");
+       const fileUrl = await storage.upload(file, `process-documents/${id}`);
+       const docType =
+         type.startsWith("image/") ? "imagem" :
+         type === "application/pdf" ? "pdf" :
+         type.includes("word") ? "docx" :
+         type.includes("sheet") ? "xlsx" : "arquivo";
+ 
+       await dynamodb.documents.update(existing.id, {
+         file_url: fileUrl,
+         document_type: docType,
+         status: "pending",
+         resubmitted_at: new Date().toISOString(),
+       });
+ 
+       await fetchDocuments();
+       toast({ title: "Documento atualizado", description: `${existing.document_name} foi substituído.` });
+     } catch (e: any) {
+       toast({ title: "Falha ao atualizar", description: e?.message || "Tente novamente.", variant: "destructive" });
+     }
+   };
 
   const onDrop = (acceptedFiles: File[]) => {
     const valid = acceptedFiles.filter(f => allowedTypes.includes(f.type) && f.size <= 10 * 1024 * 1024);
@@ -503,10 +593,25 @@ const DetalheProcesso = () => {
       // Atualizar documento no DynamoDB
       await dynamodb.documents.update(resubmitDoc.id, {
         file_url: fileUrl,
-        status: "resubmitted",
+        status: "pending",
         correction_justification: resubmitJustification.trim(),
         resubmitted_at: new Date().toISOString(),
+        rejection_reason: null,
       });
+
+      // Atualizar estado local imediatamente para evitar inconsistências
+      setDocuments(prev => prev.map(doc => 
+        doc.id === resubmitDoc.id 
+          ? { 
+              ...doc, 
+              file_url: fileUrl, 
+              status: "pending", 
+              rejection_reason: null,
+              correction_justification: resubmitJustification.trim(),
+              resubmitted_at: new Date().toISOString(),
+            } 
+          : doc
+      ));
 
       await addToHistory(`Reenvio de documento: ${resubmitDoc.document_name}. Justificativa: ${resubmitJustification.trim()}`);
 
@@ -620,12 +725,12 @@ const DetalheProcesso = () => {
           <h3 className="text-base font-semibold mb-2 text-muted-foreground">
             Etapa Atual: {(() => {
               const map: Record<string, string> = {
-                cadastro: "Cadastro",
+                cadastro: "Entrada",
                 triagem: "Triagem",
                 vistoria: "Vistoria",
-                comissao: "Comissão",
-                aprovacao: "Aprovação Final",
-                concluido: "Concluído",
+                comissao: "Alocação de Viabilidade",
+                aprovacao: "Emissão AVCB",
+                concluido: "Emissão AVCB",
                 exigencia: "Em Exigência",
               };
               return map[process.current_status] || process.current_status;
@@ -633,15 +738,328 @@ const DetalheProcesso = () => {
           </h3>
         </Card>
 
-        {/* Two-column grid: Informações + Documentos da Etapa */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Página da Etapa “Entrada” */}
+        <Card className="p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">Detalhamento da Solicitação do Atestado de Vistoria</h2>
+          {/* Bloco superior (resumo da solicitação) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div>
+              <p className="text-xs text-muted-foreground">Abertura</p>
+              <p className="font-medium">{new Date(process.created_at).toLocaleString("pt-BR")}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">CNPJ/CPF</p>
+              <p className="font-medium">{process.cnpj}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Protocolo</p>
+              <p className="font-medium">
+                {(() => {
+                  const pago = (process as any)?.taxa_bombeiro_pago || process.current_status !== "aguardando_pagamento";
+                  return pago ? (process.process_number || "—") : <span className="text-red-600">Protocolo gerado após pagamento</span>;
+                })()}
+              </p>
+            </div>
+            <div className="lg:col-span-1 sm:col-span-2">
+              <p className="text-xs text-muted-foreground">Razão Social / Nome</p>
+              <p className="font-medium truncate">{process.company_name}</p>
+            </div>
+          </div>
+
+          {/* Seção: Histórico de Requerimento */}
+          <div className="space-y-4">
+            {/* 1️⃣ Confirmação de Pagamento */}
+            {(() => {
+              const aguardando = process.current_status === "aguardando_pagamento" || !(process as any)?.taxa_bombeiro_pago;
+              return (
+                <div className={`rounded-lg p-4 border ${aguardando ? "bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800" : "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"}`}>
+                  <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                    {aguardando ? <Clock className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Confirmação de Pagamento
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {aguardando
+                      ? "Aguardando o pagamento da DAM 20. Após a compensação bancária, o protocolo será emitido e o processo seguirá para triagem."
+                      : "Pagamento confirmado. Protocolo emitido e processo avançado para triagem."}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between">
+                    {aguardando ? (
+                      <>
+                        <span className="text-yellow-700 dark:text-yellow-400 font-medium">Aguardando Pagamento</span>
+                        <Button variant="outline" size="sm" onClick={() => setBoletoModalOpen(true)}>
+                          Emitir 2ª Via
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-green-700 dark:text-green-400 font-medium">
+                        Pagamento Confirmado {new Date(process.updated_at).toLocaleString("pt-BR")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 2️⃣ Solicitação */}
+            <div className="border rounded-lg p-4">
+              <h3 className="text-base font-semibold mb-3">Solicitação</h3>
+              <div className="flex gap-2 mb-3">
+                <Button size="sm" variant="outline" onClick={() => setInfoModalOpen(true)}>
+                  <Eye className="w-4 h-4 mr-2" /> Visualizar Informações
+                </Button>
+                <Button size="sm" variant="destructive" onClick={async () => {
+                  const ok1 = window.confirm("Tem certeza que deseja excluir esta solicitação?");
+                  if (!ok1) return;
+                  const ok2 = window.confirm("Confirme novamente: esta ação é irreversível.");
+                  if (!ok2 || !id) return;
+                  try {
+                    await dynamodb.processes.delete(id);
+                    toast({ title: "Solicitação excluída", description: "O formulário foi removido com sucesso." });
+                    navigate("/dashboard/usuario");
+                  } catch (e: any) {
+                    toast({ title: "Erro ao excluir", description: e.message || "Tente novamente.", variant: "destructive" });
+                  }
+                }}>
+                  <Trash2 className="w-4 h-4 mr-2" /> Excluir Formulário
+                </Button>
+              </div>
+              {/* Histórico cronológico de versões da solicitação */}
+              <div className="space-y-1 text-sm text-muted-foreground">
+                {history.filter(h => (h.status || "") === "cadastro").map((h) => (
+                  <p key={h.id}>📄 Solicitação - {new Date(h.created_at).toLocaleDateString("pt-BR")}</p>
+                ))}
+                {history.filter(h => (h.status || "") === "cadastro").length === 0 && (
+                  <p>— Sem versões anteriores —</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 3️⃣ Documentação a ser Anexada */}
+          {((process.current_status === "cadastro") && (process as any)?.taxa_bombeiro_pago) && (
+            <div className="mt-6">
+              <h3 className="text-xl font-bold text-red-700 mb-2">Documentação a ser Anexada</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {requiredDocsEntrada.map((item) => {
+                  const existing = findUploadedByPattern(item.pattern);
+                  const isUploaded = !!existing;
+                  const isRejected = existing?.status === "rejected";
+                  return (
+                    <div key={item.id} className="border rounded-lg p-4 shadow-sm border-red-300 bg-white">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{item.nome}</p>
+                          <p className={`text-xs ${item.obrigatorio ? "text-green-600" : "text-muted-foreground"}`}>{item.obrigatorio ? "Obrigatório" : "Opcional"}</p>
+                        </div>
+                        <div className="text-sm">
+                          {isRejected ? (
+                            <span className="text-red-600">Reprovado</span>
+                          ) : isUploaded ? (
+                            <span className="text-green-700">Anexado</span>
+                          ) : (
+                            <span className="text-yellow-700">Pendente</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3">
+                        {!isUploaded ? (
+                          <label className="inline-flex items-center">
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.png,.jpeg,.docx,.xlsx"
+                              className="hidden"
+                              ref={(el) => { fileInputsByDocId.current[item.id] = el; }}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (!f) return;
+                                if (!isUploaded) uploadDocFor(item as any, f);
+                                else if (existing) replaceUploadedDoc(existing, f);
+                              }}
+                            />
+                            <Button size="sm" className="bg-red-700 hover:bg-red-800 text-white" onClick={() => fileInputsByDocId.current[item.id]?.click()}>
+                              <Paperclip className="w-4 h-4 mr-2" /> Anexar
+                            </Button>
+                          </label>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => existing && openPreviewForDoc(existing)}>Pré-visualizar</Button>
+                            <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600 text-white" onClick={() => fileInputsByDocId.current[item.id]?.click()}>Editar</Button>
+                            <Button size="sm" variant="outline" onClick={() => existing && handleDeleteDocument(existing)}>Excluir</Button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isRejected && existing?.rejection_reason && (
+                        <p className="text-xs text-red-600 mt-2">Motivo: {existing.rejection_reason}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Botão Enviar Documentação */}
+              {(() => {
+                const allRequiredUploaded = requiredDocsEntrada.filter(d => d.obrigatorio).every(d => !!findUploadedByPattern(d.pattern));
+                return (
+                  <div className="mt-4">
+                    <Button
+                      className="bg-green-700 hover:bg-green-800 text-white font-semibold"
+                      disabled={!allRequiredUploaded}
+                      onClick={() => setDocsSubmitOpen(true)}
+                    >
+                      Enviar Documentação
+                    </Button>
+                    {!allRequiredUploaded && (
+                      <p className="text-xs text-muted-foreground mt-2">Anexe todos os documentos obrigatórios para habilitar o envio.</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Modal de confirmação: Enviar Documentação */}
+          <Dialog open={docsSubmitOpen} onOpenChange={setDocsSubmitOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Enviar documentos para triagem?</DialogTitle>
+                <DialogDescription>Após o envio, os anexos ficam bloqueados até o retorno da análise.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDocsSubmitOpen(false)}>Cancelar</Button>
+                <Button onClick={async () => {
+                  if (!id) return;
+                  try {
+                    await dynamodb.processes.update(id, {
+                      current_status: "triagem",
+                    });
+                    await dynamodb.history.create({
+                      process_id: id,
+                      status: "triagem",
+                      step_status: "in_progress",
+                      observations: "Documentação enviada para triagem.",
+                      responsible_name: process?.company_name || "Usuário",
+                    } as any);
+                    await fetchProcess();
+                    await fetchHistory();
+                    setDocsSubmitOpen(false);
+                    toast({ title: "Documentação enviada", description: "Processo avançou para Triagem." });
+                  } catch (e: any) {
+                    toast({ title: "Erro ao enviar", description: e?.message || "Tente novamente.", variant: "destructive" });
+                  }
+                }}>Confirmar envio</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal: Emitir 2ª Via de Boleto */}
+          <Dialog open={boletoModalOpen} onOpenChange={setBoletoModalOpen}>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Segunda Via de Boleto – CBM/PE</DialogTitle>
+                <DialogDescription>Pagamento simulado para testes do SGVP – CBM/PE.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <p className="font-bold text-2xl text-red-700">{typeof (process as any)?.taxa_bombeiro_valor === 'number' ? (process as any)?.taxa_bombeiro_valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}</p>
+                  <p className="text-sm text-muted-foreground">Valor do Boleto</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Solicitante</p>
+                    <p className="font-medium">{process?.company_name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Protocolo</p>
+                    <p className="font-medium">{(process as any)?.taxa_bombeiro_pago ? (process?.process_number || '—') : 'Gerado após pagamento'}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Vencimento</p>
+                    <p className="font-medium">{(() => { const d = new Date(Date.now() + 7*24*60*60*1000); return d.toLocaleDateString('pt-BR'); })()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="border rounded p-2">
+                    <QRCodeSVG value={`Pagamento_CBMBPE_${id || ''}_${(process as any)?.taxa_bombeiro_valor || 0}`} size={140} />
+                  </div>
+                  <div className="text-sm">
+                    <p className="font-mono tracking-wider">23793.38128 60000.004536 02002.123458 8 89080000012590</p>
+                    <p className="text-xs text-muted-foreground mt-2">⚠️ Este é um pagamento simulado para fins de teste do sistema SGVP – CBM/PE. Após a confirmação, o status será atualizado automaticamente para “Pagamento Efetuado”.</p>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setBoletoModalOpen(false)} disabled={paying}>Cancelar</Button>
+                <Button className="bg-red-700 hover:bg-red-800 text-white font-semibold" onClick={async () => {
+                  if (!id) return;
+                  setPaying(true);
+                  setTimeout(async () => {
+                    try {
+                      await dynamodb.processes.update(id, {
+                        taxa_bombeiro_pago: true,
+                        current_status: "cadastro",
+                        process_number: process?.process_number || generateProcessNumber(),
+                      });
+                      await dynamodb.history.create({
+                        process_id: id,
+                        status: "cadastro",
+                        step_status: "awaiting_docs",
+                        observations: "Pagamento confirmado (simulado). Aguardando envio da documentação.",
+                        responsible_name: process?.company_name || "Usuário",
+                      } as any);
+                      await fetchProcess();
+                      await fetchHistory();
+                      setPaying(false);
+                      toast({ title: "Pagamento confirmado", description: "Etapa Entrada habilitada para anexos.", variant: "default" });
+                      setBoletoModalOpen(false);
+                    } catch (e: any) {
+                      setPaying(false);
+                      toast({ title: "Falha ao atualizar", description: e?.message || "Tente novamente.", variant: "destructive" });
+                    }
+                  }, 1500);
+                }} disabled={paying}>
+                  {paying ? (<><RefreshCw className="mr-2 h-4 w-4 animate-spin"/>Processando...</>) : "Fazer Pagamento"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal: Visualizar Informações completas */}
+          <Dialog open={infoModalOpen} onOpenChange={setInfoModalOpen}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Informações completas da solicitação</DialogTitle>
+                <DialogDescription>Dados iniciais cadastrados.</DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <p><strong>Empresa:</strong> {process.company_name}</p>
+                <p><strong>CNPJ:</strong> {process.cnpj}</p>
+                <p><strong>Endereço:</strong> {process.address}</p>
+                {(() => { const c = getContactInfo(); return (
+                  <>
+                    <p><strong>Contato:</strong> {c.name || "—"}</p>
+                    <p><strong>Telefone:</strong> {c.phone || "—"}</p>
+                    <p><strong>E-mail:</strong> {c.email || "—"}</p>
+                  </>
+                ); })()}
+                {(process as any)?.taxa_bombeiro_valor && (
+                  <p><strong>Taxa:</strong> R$ {Number((process as any)?.taxa_bombeiro_valor || 0).toFixed(2)}</p>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </Card>
+
+        {/* Grid: Informações do Processo */}
+        <div className="grid grid-cols-1 gap-6">
           {/* Informações do Processo (compacto com Ver mais) */}
           <Card className="p-4 bg-muted/30 border border-muted-foreground/20 shadow-sm flex flex-col justify-between">
             <h4 className="font-semibold text-foreground mb-3">📍 Informações do Processo</h4>
             <div>
               <p className="text-sm"><strong>Número:</strong> {process.process_number}</p>
               <p className="text-sm"><strong>Empresa:</strong> {process.company_name}</p>
-              <p className="text-sm flex items-center gap-2"><strong>Status:</strong> <StatusBadge status={process.current_status as any} type="process" /></p>
+              <div className="text-sm flex items-center gap-2"><strong>Status:</strong> <StatusBadge status={process.current_status as any} type="process" /></div>
               <p className="text-sm"><strong>Última atualização:</strong> {new Date(process.updated_at).toLocaleDateString("pt-BR")}</p>
               <Button variant="link" className="mt-2 p-0 h-auto text-sm" onClick={() => setMostrarDetalhes(!mostrarDetalhes)}>
                 {mostrarDetalhes ? "Ocultar detalhes" : "Ver detalhes completos"}
@@ -657,156 +1075,13 @@ const DetalheProcesso = () => {
                       <p><strong>E-mail:</strong> {c.email || "—"}</p>
                     </>
                   ); })()}
-                  <p><strong>Data de Abertura:</strong> {new Date(process.created_at).toLocaleDateString("pt-BR")}</p>
+                  <p><strong>Data de Abertura:</strong> {new Date(process.created_at).toLocaleString("pt-BR")}</p>
                 </div>
               )}
             </div>
           </Card>
 
-          {/* Documentos da Etapa (filtrados pela etapa atual) */}
-          <Card className="p-4 bg-muted/30 border border-muted-foreground/20 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-foreground">📄 Documentos da Etapa</h4>
-              {(["cadastro","triagem","vistoria","exigencia"] as string[]).includes(process.current_status) ? (
-                <Dialog open={uploadOpen} onOpenChange={(open) => {
-                  if (!open) {
-                    Object.values(previewUrls).forEach(u => URL.revokeObjectURL(u));
-                    setPreviewUrls({});
-                    setPendingFiles([]);
-                  }
-                  setUploadOpen(open);
-                }}>
-                  <DialogTrigger asChild>
-                    <Button size="sm">
-                      <Upload className="w-4 h-4 mr-2" />
-                      Enviar
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Enviar Documento</DialogTitle>
-                      <DialogDescription>
-                        Arraste e solte arquivos (PDF, JPG, PNG, DOCX, XLSX) — máx. 10MB cada
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div
-                        {...getRootProps()}
-                        className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer ${isDragActive ? "bg-primary/5 border-primary" : "bg-muted/50"}`}
-                      >
-                        <input {...getInputProps()} />
-                        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                          <Paperclip className="w-5 h-5" />
-                          <span>Solte os arquivos aqui ou clique para selecionar</span>
-                        </div>
-                      </div>
-                      {pendingFiles.length > 0 && (
-                        <div className="space-y-3">
-                          <h4 className="text-sm font-medium">Pré-visualização</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {pendingFiles.map((f) => {
-                              const isImg = f.type.startsWith("image/");
-                              const isPdf = f.type === "application/pdf";
-                              const url = previewUrls[f.name];
-                              return (
-                                <div key={f.name} className="border rounded-lg p-2 bg-card">
-                                  <div className="aspect-video rounded mb-2 flex items-center justify-center overflow-hidden bg-muted">
-                                    {isImg && url ? (
-                                      <img src={url} alt={f.name} className="object-cover w-full h-full" />
-                                    ) : (
-                                      <div className="text-muted-foreground flex flex-col items-center">
-                                        {isPdf ? <FileText className="w-8 h-8" /> : <FileIcon className="w-8 h-8" />}
-                                        <span className="text-xs mt-1 truncate max-w-[120px]">{f.name}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center justify-between">
-                                    <Button variant="outline" size="sm" onClick={() => setPreviewDoc({ type: isPdf ? "pdf" : (isImg ? "image" : "other"), url: url || "", name: f.name })}>
-                                      <Eye className="w-4 h-4 mr-1" />
-                                      Ver
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onClick={() => clearPendingFile(f.name)}>
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      <DialogFooter>
-                        <div className="w-full space-y-2">
-                          {uploading && <Progress value={uploadProgress} />}
-                          <Button className="w-full" onClick={handleBatchUpload} disabled={uploading || pendingFiles.length === 0}>
-                            {uploading ? "Enviando..." : `Enviar ${pendingFiles.length} arquivo(s)`}
-                          </Button>
-                        </div>
-                      </DialogFooter>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              ) : (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div>
-                        <Button size="sm" disabled>
-                          <Upload className="w-4 h-4 mr-2" />
-                          Enviar
-                        </Button>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-sm">Envio bloqueado nesta etapa. Aguarde liberação.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </div>
-
-            {(() => {
-              const documentosEtapa = documents.filter(d => (d.stage || "") === process.current_status);
-              if (documentosEtapa.length === 0) {
-                return (
-                  <p className="text-sm text-muted-foreground">Nenhum documento enviado nesta etapa.</p>
-                );
-              }
-              return (
-                <ul className="divide-y divide-muted-foreground/20">
-                  {documentosEtapa.map((doc) => (
-                    <li key={doc.id} className="flex justify-between items-center py-2">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <FileText className="text-primary w-5 h-5" />
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate">{doc.document_name}</p>
-                          <p className="text-xs text-muted-foreground capitalize">
-                            {doc.status === 'completed' ? '✅ Aprovado' : doc.status === 'pending' ? '⏳ Em análise' : doc.status === 'rejected' ? '❌ Reprovado' : doc.status === 'resubmitted' ? '🔁 Corrigido/Reenviado' : doc.status}
-                          </p>
-                          {doc.rejection_reason && (
-                            <p className="text-[11px] text-red-600 mt-1">{doc.rejection_reason}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        <Button size="sm" variant="outline" onClick={() => openPreviewForDoc(doc)}>
-                          👁️ Ver
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleDownload(doc)}>
-                          ⬇️ Baixar
-                        </Button>
-                        {doc.status === 'rejected' && (
-                          <Button size="sm" variant="destructive" onClick={() => { setResubmitDoc(doc); setResubmitOpen(true); }}>
-                            🔁 Corrigir/Reenviar
-                          </Button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              );
-            })()}
-          </Card>
+          {/* Documentos da Etapa removido conforme solicitação */}
         </div>
 
         {/* Documento Final Aprovado e Liberado */}

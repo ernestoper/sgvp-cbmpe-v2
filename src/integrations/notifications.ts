@@ -16,6 +16,7 @@ export interface DispatchPayload {
   event: DispatchEvent;
   reason?: string; // for rejected
   contact: ContactInfo;
+  documentName?: string;
 }
 
 const EVOLUTION_API_URL = (import.meta.env.VITE_EVOLUTION_API_URL || "").replace(/\/$/, "");
@@ -37,6 +38,11 @@ function buildApprovedText(stage: string, nextStage: string, processId: string) 
   return `✅ Sua etapa *${capitalize(stage)}* foi aprovada!\nO processo agora segue para *${capitalize(nextStage)}*.\n\nAcompanhe: ${link}\n\n🧯 CBM-PE - Sistema de Vistorias`;
 }
 
+function buildApprovedDocumentText(docName: string, processId: string) {
+  const link = `${window.location.origin}/processo/${processId}`;
+  return `✅ Seu documento "${escapeHtml(docName)}" foi aprovado.\n\nAcompanhe: ${link}\n\n🧯 CBM-PE - Sistema de Vistorias`;
+}
+
 function buildRejectedText(stage: string, reason: string, processId: string) {
   const link = `${window.location.origin}/processo/${processId}?from=notification`;
   return `🚨 *DOCUMENTO REPROVADO* - CBM-PE
@@ -54,6 +60,11 @@ function buildRejectedText(stage: string, reason: string, processId: string) {
 ⚠️ *Importante:* Seu processo está em exigência até a correção ser aprovada.
 
 🧯 *CBM-PE - Sistema de Vistorias*`;
+}
+
+function buildRejectedDocumentText(docName: string, reason: string, processId: string) {
+  const link = `${window.location.origin}/processo/${processId}?from=notification`;
+  return `🚨 Documento reprovado: "${escapeHtml(docName)}"\nMotivo: ${escapeHtml(reason)}\n\nReenvie o arquivo corrigido pelo portal: ${link}\n\n🧯 CBM-PE - Sistema de Vistorias`;
 }
 
 function buildEmailSubject(stage: string) {
@@ -76,16 +87,46 @@ function buildEmailHtmlApproved(name: string, stage: string, nextStage: string, 
   `;
 }
 
+function buildEmailHtmlApprovedDocument(name: string, docName: string, processId: string) {
+  const link = `${window.location.origin}/processo/${processId}`;
+  return `
+    <div style="font-family: Arial, sans-serif;">
+      <h2>🧯 CBM-PE - Sistema de Vistorias</h2>
+      <p>Olá, <strong>${escapeHtml(name)}</strong>,</p>
+      <p>Seu documento <strong>${escapeHtml(docName)}</strong> foi <strong>aprovado</strong>.</p>
+      <p>Para acompanhar o processo, acesse: <a href="${link}">${link}</a></p>
+      <br/>
+      <p>🔥 Corpo de Bombeiros Militar de Pernambuco</p>
+      <p>Sistema de Gestão de Vistorias e Processos (SGVP)</p>
+    </div>
+  `;
+}
+
 function buildEmailHtmlRejected(name: string, stage: string, reason: string, processId: string) {
   const link = `${window.location.origin}/processo/${processId}`;
   return `
     <div style="font-family: Arial, sans-serif;">
       <h2>🧯 CBM-PE - Sistema de Vistorias</h2>
       <p>Olá, <strong>${escapeHtml(name)}</strong>,</p>
-      <p>Sua etapa <strong>${escapeHtml(capitalize(stage))}</strong> <strong>não foi aprovada</strong>.</p>
-      <p>Motivo: ${escapeHtml(reason)}</p>
-      <p>Por favor, acesse o portal e corrija/reenvie os documentos solicitados.</p>
-      <p>Link: <a href="${link}">${link}</a></p>
+      <p>Sua etapa <strong>${escapeHtml(capitalize(stage))}</strong> foi <strong>reprovada</strong>.</p>
+      <p><strong>Motivo:</strong> ${escapeHtml(reason)}</p>
+      <p>Para corrigir e reenviar os documentos, acesse: <a href="${link}">${link}</a></p>
+      <br/>
+      <p>🔥 Corpo de Bombeiros Militar de Pernambuco</p>
+      <p>Sistema de Gestão de Vistorias e Processos (SGVP)</p>
+    </div>
+  `;
+}
+
+function buildEmailHtmlRejectedDocument(name: string, docName: string, reason: string, processId: string) {
+  const link = `${window.location.origin}/processo/${processId}`;
+  return `
+    <div style="font-family: Arial, sans-serif;">
+      <h2>🧯 CBM-PE - Sistema de Vistorias</h2>
+      <p>Olá, <strong>${escapeHtml(name)}</strong>,</p>
+      <p>Seu documento <strong>${escapeHtml(docName)}</strong> foi <strong>reprovado</strong>.</p>
+      <p><strong>Motivo:</strong> ${escapeHtml(reason)}</p>
+      <p>Para corrigir e reenviar, acesse: <a href="${link}">${link}</a></p>
       <br/>
       <p>🔥 Corpo de Bombeiros Militar de Pernambuco</p>
       <p>Sistema de Gestão de Vistorias e Processos (SGVP)</p>
@@ -196,6 +237,15 @@ export async function dispatchStatusChange(dp: DispatchPayload) {
     text = buildApprovedText(dp.currentStage, dp.nextStage, dp.processId);
     subject = buildEmailSubject(dp.currentStage);
     html = buildEmailHtmlApproved(name, dp.currentStage, dp.nextStage, dp.processId);
+  } else if (dp.event === "approved" && dp.documentName) {
+    text = buildApprovedDocumentText(dp.documentName, dp.processId);
+    subject = buildEmailSubject(dp.currentStage);
+    html = buildEmailHtmlApprovedDocument(name, dp.documentName, dp.processId);
+  } else if (dp.event === "rejected" && dp.documentName) {
+    const reason = dp.reason || "Pendências a corrigir";
+    text = buildRejectedDocumentText(dp.documentName, reason, dp.processId);
+    subject = buildEmailSubject(dp.currentStage);
+    html = buildEmailHtmlRejectedDocument(name, dp.documentName, reason, dp.processId);
   } else if (dp.event === "rejected") {
     const reason = dp.reason || "Pendências a corrigir";
     text = buildRejectedText(dp.currentStage, reason, dp.processId);
