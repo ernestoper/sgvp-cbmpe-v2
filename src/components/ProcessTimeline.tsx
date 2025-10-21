@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FilePlus, SearchCheck, ClipboardList, Users, CheckCircle, Award, AlertCircle, Paperclip, Image as ImageIcon, FileText, File as FileIcon, Eye, Download } from "lucide-react";
+import { FilePlus, SearchCheck, ClipboardList, Users, CheckCircle, Award, AlertCircle, Clock, Paperclip, Image as ImageIcon, FileText, File as FileIcon, Eye, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -78,6 +78,8 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   const activeStage: ProcessStatus = currentStatus === "exigencia" ? (lastStageInHistory?.status as ProcessStatus) || "triagem" : currentStatus;
   const activeIndex = timelineSteps.findIndex((step) => step.status === activeStage);
   const hasExigencia = currentStatus === "exigencia";
+  const resolvedActiveIndex = activeIndex === -1 ? (timelineSteps.length - 1) : activeIndex;
+  const isConcludedProcess = currentStatus === "concluido";
 
   const getStepHistory = (status: string) => {
     return history.filter(h => h.status === status);
@@ -116,12 +118,12 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   };
 
   const getStepStatus = (index: number) => {
-    const step = timelineSteps[index].status;
-    if (hasExigencia && index === activeIndex) {
+    if (isConcludedProcess) return "completed";
+    if (hasExigencia && index === resolvedActiveIndex) {
       return "exigencia";
     }
-    if (step === activeStage) return "in_progress";
-    if (isStageApproved(step)) return "completed";
+    if (index < resolvedActiveIndex) return "completed";
+    if (index === resolvedActiveIndex) return "in_progress";
     return "pending";
   };
 
@@ -184,13 +186,21 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
       <div className={cn("relative pb-4 -mb-2", isAdmin ? "overflow-x-hidden" : "overflow-x-auto snap-x snap-mandatory scroll-smooth")}>
         <div className={cn("flex items-center px-2", isAdmin ? "gap-4" : "gap-8", !isAdmin && "min-w-max")}>
           {timelineSteps.map((step, index) => {
-            const Icon = step.icon;
             const stepStatus = getStepStatus(index);
             const isCompleted = stepStatus === "completed";
             const isCurrent = stepStatus === "in_progress";
-            const isExigencia = stepStatus === "exigencia" && index === activeIndex;
+            const isExigencia = stepStatus === "exigencia" && index === resolvedActiveIndex;
+            const isPending = stepStatus === "pending";
             const stepHistory = getStepHistory(step.status);
             const tooltipText = mode === "admin" ? tooltipTextAdmin[step.status] : tooltipTextUser[step.status];
+
+            // Nova lógica de ícones conforme especificação
+            let StepIcon = Clock; // Padrão para pendente
+            if (isCompleted) {
+              StepIcon = CheckCircle;
+            } else if (isCurrent || isExigencia) {
+              StepIcon = AlertCircle;
+            }
 
             const stepAttachments = getStepAttachments(step.status);
             const attachmentsCount = stepAttachments.length;
@@ -202,7 +212,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
                     className={cn(
                       "absolute top-8 h-1",
                       isAdmin ? "left-[-3rem] w-12 sm:left-[-3.5rem] sm:w-14 md:left-[-4rem] md:w-20" : "left-[-4rem] w-16 md:w-24",
-                      isCompleted ? "bg-green-600" : "bg-muted"
+                      isCompleted ? "bg-green-600" : "bg-gray-300"
                     )}
                   />
                 )}
@@ -210,35 +220,36 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
                 {/* Ícone circular */}
                 <div
                   className={cn(
-                    "relative z-10 flex items-center justify-center rounded-full transition-all duration-300 border-2",
-                    isCompleted && "bg-green-600 text-white border-green-600",
-                    isCurrent && !isExigencia && "bg-blue-600 text-white border-blue-600 ring-4 ring-blue-600/30 scale-105",
-                    isExigencia && "bg-red-600 text-white border-red-600 ring-4 ring-red-600/20",
-                    !isCompleted && !isCurrent && !isExigencia && "bg-muted text-muted-foreground border-muted-foreground/20",
-                    isCurrent ? (isAdmin ? "w-14 h-14 md:w-16 md:h-16" : "w-16 h-16") : (isAdmin ? "w-12 h-12 md:w-14 md:h-14" : "w-14 h-14")
+                    "relative z-10 flex items-center justify-center rounded-full transition-all duration-300",
+                    // Nova lógica de cores conforme especificação
+                    isCompleted && "bg-green-600 text-white",
+                    (isCurrent || isExigencia) && "bg-red-600 text-white",
+                    isPending && "bg-gray-400 text-gray-700",
+                    "w-10 h-10"
                   )}
                 >
-                  {isExigencia ? <AlertCircle className={cn(isCurrent ? (isAdmin ? "w-7 h-7 md:w-8 md:h-8" : "w-8 h-8") : (isAdmin ? "w-6 h-6 md:w-7 md:h-7" : "w-7 h-7"))}/> : <Icon className={cn(isCurrent ? (isAdmin ? "w-7 h-7 md:w-8 md:h-8" : "w-8 h-8") : (isAdmin ? "w-6 h-6 md:w-7 md:h-7" : "w-7 h-7"))} />}
+                  <StepIcon className="w-5 h-5" />
                 </div>
 
                 {/* Título e meta */}
                 <div className="mt-2 text-center">
                   <h4
                     className={cn(
-                      "font-semibold text-sm",
-                      (isCompleted || isCurrent || isExigencia) ? "text-foreground" : "text-muted-foreground"
+                      "font-medium text-sm",
+                      "text-gray-800"
                     )}
                   >
                     {step.label}
                   </h4>
                   <p className={cn(
-                    "text-[12px] mt-1",
-                    isExigencia ? "text-red-600 font-medium" : "text-muted-foreground"
+                    "text-xs mt-1",
+                    isCompleted && "text-green-700",
+                    (isCurrent || isExigencia) && "text-red-700", 
+                    isPending && "text-gray-500"
                   )}>
-                    {isExigencia && "Exigência"}
-                    {isCurrent && !isExigencia && "Em andamento"}
-                    {isCompleted && "Concluído"}
-                    {!isCompleted && !isCurrent && !isExigencia && "Pendente"}
+                    {isCompleted && "✅ Concluída"}
+                    {(isCurrent || isExigencia) && "🔴 Em andamento"}
+                    {isPending && "⚪ Pendente"}
                   </p>
 
                   {attachmentsCount > 0 && (
@@ -254,7 +265,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
                     className={cn(
                       "absolute right-[-4rem] top-8 h-1 w-16 md:w-24",
                       // segment fica verde se esta etapa estiver concluída
-                      isCompleted ? "bg-green-600" : "bg-muted"
+                      isCompleted ? "bg-green-600" : "bg-gray-300"
                     )}
                   />
                 )}

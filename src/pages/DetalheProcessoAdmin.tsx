@@ -253,6 +253,38 @@ const DetalheProcessoAdmin = () => {
   const stageStatuses: ProcessStatus[] = ["cadastro","triagem","vistoria","comissao","aprovacao","concluido"];
   const lastStageInHistory = [...history].reverse().find(h => stageStatuses.includes(h.status as ProcessStatus))?.status as ProcessStatus | undefined;
   const activeStageForActions: ProcessStatus = currentStage === "exigencia" ? (lastStageInHistory || "triagem") : currentStage;
+  const isTriagemActions = activeStageForActions === "triagem";
+
+  // Recalcula e atualiza o status geral do processo com base nos documentos da etapa ativa
+  const recalcAndUpdateProcessStatus = async () => {
+    try {
+      if (!id) return;
+      const freshDocs = await dynamodb.documents.getByProcessId(id);
+      const stageForCheck = activeStageForActions;
+      const stageDocs = (freshDocs || []).filter((d: any) => (d.stage || "cadastro") === stageForCheck);
+
+      const todosAprovados = stageDocs.length > 0 && stageDocs.every((d: any) => d.status === "completed");
+      const algumReprovado = stageDocs.some((d: any) => d.status === "rejected");
+      const algumPendente = stageDocs.some((d: any) => d.status === "pending");
+
+      let novoStatus: ProcessStatus = stageForCheck;
+      if (algumReprovado) {
+        novoStatus = "exigencia";
+      } else if (todosAprovados) {
+        novoStatus = stageForCheck; // Aguardando próxima etapa (UI)
+      } else if (algumPendente) {
+        novoStatus = stageForCheck; // Em análise (UI)
+      }
+
+      if (process?.current_status !== novoStatus) {
+        await dynamodb.processes.update(id!, { current_status: novoStatus });
+        fetchProcess();
+        fetchHistory();
+      }
+    } catch (e) {
+      console.warn("Falha ao recalcular status do processo (admin):", e);
+    }
+  };
 
   // Quando o processo carregar/alterar, sincroniza etapa selecionada com etapa atual
   useEffect(() => {
@@ -503,6 +535,7 @@ const DetalheProcessoAdmin = () => {
       // Pequeno delay para garantir consistência do DynamoDB
       await new Promise(resolve => setTimeout(resolve, 500));
       await fetchDocuments();
+      await recalcAndUpdateProcessStatus();
       console.log('✅ Approve completed');
     } catch (error: any) {
       console.error('❌ Error approving document:', error);
@@ -580,6 +613,7 @@ const DetalheProcessoAdmin = () => {
       setRejectionReason("");
       fetchProcess();
       fetchDocuments();
+      await recalcAndUpdateProcessStatus();
       fetchHistory();
     } catch (error: any) {
       toast({
@@ -784,13 +818,8 @@ const DetalheProcessoAdmin = () => {
       }
 
       console.log('Updating process status to:', newStatus);
-      const { error } = await supabase
-        .from("processes")
-        .update({ current_status: newStatus })
-        .eq("id", id);
-
-      console.log('Update result:', { error });
-      if (error) throw error;
+      await dynamodb.processes.update(id!, { current_status: newStatus });
+      console.log('Update result: success');
 
       await addToHistory("completed", observations || `Etapa ${stepLabels[currentStage as ProcessStatus]} aprovada e avançada para ${stepLabels[newStatus]}`);
 
@@ -1018,11 +1047,7 @@ const DetalheProcessoAdmin = () => {
     if (!process || !finalRejectReason.trim()) return;
     setProcessing(true);
     try {
-      const { error: procError } = await supabase
-        .from("processes")
-        .update({ current_status: "exigencia" })
-        .eq("id", process.id);
-      if (procError) throw procError;
+      await dynamodb.processes.update(process.id, { current_status: "exigencia" });
 
       await addToHistory("rejected", `Processo reprovado na aprovação final: ${finalRejectReason}`);
 
@@ -1650,7 +1675,7 @@ const DetalheProcessoAdmin = () => {
                                   <Button
                                     size="sm"
                                     className="w-full"
-                                    disabled={(doc.stage || "cadastro") !== activeStageForActions}
+                                    disabled={!isTriagemActions && (doc.stage || "cadastro") !== activeStageForActions}
                                     onClick={() => {
                                       setSelectedDocument(doc);
                                       setActionDialog("approve");
@@ -1660,7 +1685,7 @@ const DetalheProcessoAdmin = () => {
                                   </Button>
                                 </div>
                               </TooltipTrigger>
-                              {(doc.stage || "cadastro") !== activeStageForActions && (
+                              {(doc.stage || "cadastro") !== activeStageForActions && !isTriagemActions && (
                                 <TooltipContent>
                                   <p className="text-sm">Documento fora da etapa em análise ({doc.stage || "cadastro"}).</p>
                                 </TooltipContent>
@@ -1671,7 +1696,7 @@ const DetalheProcessoAdmin = () => {
                             size="sm"
                             variant="destructive"
                             className="flex-1"
-                            disabled={(doc.stage || "cadastro") !== activeStageForActions}
+                            disabled={!isTriagemActions && (doc.stage || "cadastro") !== activeStageForActions}
                             onClick={() => {
                               setSelectedDocument(doc);
                               setActionDialog("reject");

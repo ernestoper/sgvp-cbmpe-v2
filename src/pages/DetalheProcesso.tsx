@@ -562,6 +562,35 @@ const DetalheProcesso = () => {
     }
   };
 
+  // Recalcula e atualiza o status do processo após mudanças em documentos do usuário
+  const recalcProcessStatusAfterChange = async () => {
+    try {
+      if (!id) return;
+      const freshDocs = await dynamodb.documents.getByProcessId(id);
+      const stageForCheck = (process?.current_status === "exigencia" ? "triagem" : (process?.current_status || "cadastro"));
+      const stageDocs = (freshDocs || []).filter((d: any) => (d.stage || "cadastro") === stageForCheck);
+      const todosAprovados = stageDocs.length > 0 && stageDocs.every((d: any) => d.status === "completed");
+      const algumReprovado = stageDocs.some((d: any) => d.status === "rejected");
+      const algumPendente = stageDocs.some((d: any) => d.status === "pending");
+
+      let novoStatus: string = stageForCheck;
+      if (algumReprovado) {
+        novoStatus = "exigencia";
+      } else if (todosAprovados) {
+        novoStatus = stageForCheck; // Aguardando próxima etapa (UI)
+      } else if (algumPendente) {
+        novoStatus = stageForCheck; // Em análise (UI)
+      }
+
+      if (process?.current_status !== novoStatus) {
+        await dynamodb.processes.update(id!, { current_status: novoStatus as any });
+        fetchProcess();
+      }
+    } catch (e) {
+      console.warn("Falha ao recalcular status do processo (usuário):", e);
+    }
+  };
+
   const handleResubmitDocument = async () => {
     if (!resubmitDoc || !resubmitFile || !id) return;
     if (!resubmitJustification.trim()) {
@@ -658,6 +687,7 @@ const DetalheProcesso = () => {
       setResubmitDoc(null);
       setResubmitFile(null);
       setResubmitJustification("");
+      await recalcProcessStatusAfterChange();
       fetchDocuments();
     } catch (e: any) {
       const message = e?.message || e?.error?.message || "Tente novamente mais tarde";
@@ -736,6 +766,75 @@ const DetalheProcesso = () => {
               return map[process.current_status] || process.current_status;
             })()}
           </h3>
+        </Card>
+
+        {/* Triagem - Resumo de Documentos */}
+        <Card className="p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">
+            📋 Acompanhamento da Triagem de Documentos
+          </h2>
+
+          {documents.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Nenhum documento enviado ainda.
+            </p>
+          ) : (
+            documents.map((doc) => (
+              <div
+                key={doc.id}
+                className="flex justify-between items-center bg-muted/50 border rounded-lg p-3 mb-3"
+              >
+                <div>
+                  <p className="font-medium">{doc.document_name}</p>
+                  <Button
+                    variant="link"
+                    className="p-0 h-auto text-blue-600"
+                    onClick={() => openPreviewForDoc(doc as any)}
+                  >
+                    Visualizar Documento
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {doc.status === "pending" && (
+                    <span className="text-yellow-600 font-medium">🕒 Em análise</span>
+                  )}
+
+                  {doc.status === "completed" && (
+                    <span className="text-green-700 font-medium">✅ Aprovado</span>
+                  )}
+
+                  {doc.status === "rejected" && (
+                    <div className="flex flex-col items-end">
+                      <span className="text-red-700 font-medium mb-1">❌ Reprovado</span>
+                      {doc.rejection_reason && (
+                        <span className="text-xs text-red-700">
+                          Motivo: {doc.rejection_reason}
+                        </span>
+                      )}
+                      <Button
+                        onClick={() => { setResubmitDoc(doc as any); setResubmitOpen(true); }}
+                        disabled={resubmitting && resubmitDoc?.id === (doc as any).id}
+                        className="mt-2 flex items-center gap-2 text-sm"
+                      >
+                        {resubmitting && resubmitDoc?.id === (doc as any).id ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Reenviando...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4" />
+                            Corrigir e reenviar
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </Card>
 
         {/* Página da Etapa “Entrada” */}
