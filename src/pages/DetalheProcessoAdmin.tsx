@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProcessTimeline } from "@/components/ProcessTimeline";
 import { useRole } from "@/hooks/useRole";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import type { ProcessStatus, StepStatus } from "@/types/database";
 import {
@@ -165,6 +166,7 @@ const DetalheProcessoAdmin = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const { role, loading: roleLoading } = useRole();
   const [loading, setLoading] = useState(true);
   const [process, setProcess] = useState<Process | null>(null);
@@ -1510,7 +1512,8 @@ const DetalheProcessoAdmin = () => {
 
                 {canAdvancePhase && process.current_status !== "concluido" ? (
                   <Button 
-                    className="w-full"
+                    className={`w-full ${isMobile ? "h-9 px-3 text-sm" : ""}`}
+                    size={isMobile ? "sm" : "default"}
                     onClick={() => {
                       console.log('🔄 Avançar etapa clicked');
                       console.log('Current status:', process.current_status);
@@ -1526,16 +1529,16 @@ const DetalheProcessoAdmin = () => {
                       }
                     }}
                   >
-                    <Check className="w-4 h-4 mr-2" />
-                    Avançar para Próxima Etapa
+                    <Check className={`${isMobile ? "w-3 h-3" : "w-4 h-4"} mr-2`} />
+                    {isMobile ? "Avançar Etapa" : "Avançar para Próxima Etapa"}
                   </Button>
                 ) : (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div className="w-full">
-                          <Button className="w-full" disabled>
-                            <Check className="w-4 h-4 mr-2" />
+                          <Button className={`w-full ${isMobile ? "h-9 px-3 text-sm" : ""}`} size={isMobile ? "sm" : "default"} disabled>
+                            <Check className={`${isMobile ? "w-3 h-3" : "w-4 h-4"} mr-2`} />
                             Avançar Etapa
                           </Button>
                         </div>
@@ -1664,15 +1667,15 @@ const DetalheProcessoAdmin = () => {
                               <TooltipTrigger asChild>
                                 <div className="flex-1">
                                   <Button
-                                    size="sm"
-                                    className="w-full"
+                                    size={isMobile ? "sm" : "default"}
+                                    className={`w-full ${isMobile ? "h-8 px-2 text-xs" : ""}`}
                                     disabled={!isTriagemActions && (doc.stage || "cadastro") !== activeStageForActions}
                                     onClick={() => {
                                       setSelectedDocument(doc);
                                       setActionDialog("approve");
                                     }}
                                   >
-                                    <Check className="w-4 h-4 mr-1" /> Aprovar
+                                    <Check className={`${isMobile ? "w-3 h-3" : "w-4 h-4"} mr-1`} /> Aprovar
                                   </Button>
                                 </div>
                               </TooltipTrigger>
@@ -1684,16 +1687,16 @@ const DetalheProcessoAdmin = () => {
                             </Tooltip>
                           </TooltipProvider>
                           <Button
-                            size="sm"
+                            size={isMobile ? "sm" : "default"}
                             variant="destructive"
-                            className="flex-1"
+                            className={`flex-1 ${isMobile ? "h-8 px-2 text-xs" : ""}`}
                             disabled={!isTriagemActions && (doc.stage || "cadastro") !== activeStageForActions}
                             onClick={() => {
                               setSelectedDocument(doc);
                               setActionDialog("reject");
                             }}
                           >
-                            <X className="w-4 h-4 mr-1" /> Reprovar
+                            <X className={`${isMobile ? "w-3 h-3" : "w-4 h-4"} mr-1`} /> Reprovar
                           </Button>
                         </div>
                       )}

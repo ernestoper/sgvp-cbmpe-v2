@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 type ProcessStatus = 
   | "cadastro" 
@@ -80,6 +81,9 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   const hasExigencia = currentStatus === "exigencia";
   const resolvedActiveIndex = activeIndex === -1 ? (timelineSteps.length - 1) : activeIndex;
   const isConcludedProcess = currentStatus === "concluido";
+
+  const isMobile = useIsMobile();
+  const visibleSteps = isMobile ? timelineSteps.filter((_, i) => i === resolvedActiveIndex) : timelineSteps;
 
   const getStepHistory = (status: string) => {
     return history.filter(h => h.status === status);
@@ -185,11 +189,12 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
       {/* Timeline horizontal */}
       <div className="w-full">
         <div className="flex items-center px-2">
-          {timelineSteps.map((step, index) => {
-            const stepStatus = getStepStatus(index);
+          {visibleSteps.map((step, index) => {
+            const globalIndex = timelineSteps.findIndex(s => s.status === step.status);
+            const stepStatus = getStepStatus(globalIndex);
             const isCompleted = stepStatus === "completed";
             const isCurrent = stepStatus === "in_progress";
-            const isExigencia = stepStatus === "exigencia" && index === resolvedActiveIndex;
+            const isExigencia = stepStatus === "exigencia" && globalIndex === resolvedActiveIndex;
             const isPending = stepStatus === "pending";
             const stepHistory = getStepHistory(step.status);
             const tooltipText = mode === "admin" ? tooltipTextAdmin[step.status] : tooltipTextUser[step.status];
@@ -331,14 +336,15 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
               <div key={step.status} className="flex-1 flex items-center">
                 {NodeWithDialog}
 
-                {index < timelineSteps.length - 1 && (
+                {/* Conector entre etapas: ocultar em mobile, mostrar apenas em desktop */}
+                {!isMobile && globalIndex < timelineSteps.length - 1 && (
                   <div className="h-[3px] flex-1 bg-gray-300 mx-2 relative">
                     <div
                       className={cn(
                         "absolute left-0 top-0 bottom-0 transition-all duration-300",
-                        index < resolvedActiveIndex && "bg-green-600",
-                        index === resolvedActiveIndex && "bg-red-600",
-                        index > resolvedActiveIndex && "bg-gray-300",
+                        globalIndex < resolvedActiveIndex && "bg-green-600",
+                        globalIndex === resolvedActiveIndex && "bg-red-600",
+                        globalIndex > resolvedActiveIndex && "bg-gray-300",
                       )}
                       style={{ width: "100%" }}
                     />
@@ -351,7 +357,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
       </div>
     </Card>
   );
-};
+}
 
 // Tooltips informativos (texto)
 const tooltipTextUser: Record<ProcessStatus, string> = {
