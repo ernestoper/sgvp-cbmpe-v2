@@ -73,9 +73,9 @@ const timelineSteps: TimelineStep[] = [
 export const ProcessTimeline = ({ currentStatus, history = [], className, mode = "user", attachments = [], onPreviewDoc, onDownloadDoc, onSelectStage }: ProcessTimelineProps) => {
   const stageStatuses = timelineSteps.map(s => s.status);
 
-  // Quando estiver em exigência, usamos a última etapa registrada no histórico como etapa ativa
+  // Quando estiver em exigência, fixamos a etapa ativa como Triagem (independente do histórico)
   const lastStageInHistory = [...history].reverse().find(h => stageStatuses.includes(h.status as ProcessStatus));
-  const activeStage: ProcessStatus = currentStatus === "exigencia" ? (lastStageInHistory?.status as ProcessStatus) || "triagem" : currentStatus;
+  const activeStage: ProcessStatus = currentStatus === "exigencia" ? "triagem" : currentStatus;
   const activeIndex = timelineSteps.findIndex((step) => step.status === activeStage);
   const hasExigencia = currentStatus === "exigencia";
   const resolvedActiveIndex = activeIndex === -1 ? (timelineSteps.length - 1) : activeIndex;
@@ -183,8 +183,8 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
       )}
 
       {/* Timeline horizontal */}
-      <div className={cn("relative pb-4 -mb-2", isAdmin ? "overflow-x-hidden" : "overflow-x-auto snap-x snap-mandatory scroll-smooth")}>
-        <div className={cn("flex items-center px-2", isAdmin ? "gap-4" : "gap-8", !isAdmin && "min-w-max")}>
+      <div className="w-full">
+        <div className="flex items-center px-2">
           {timelineSteps.map((step, index) => {
             const stepStatus = getStepStatus(index);
             const isCompleted = stepStatus === "completed";
@@ -194,8 +194,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
             const stepHistory = getStepHistory(step.status);
             const tooltipText = mode === "admin" ? tooltipTextAdmin[step.status] : tooltipTextUser[step.status];
 
-            // Nova lógica de ícones conforme especificação
-            let StepIcon = Clock; // Padrão para pendente
+            let StepIcon = Clock;
             if (isCompleted) {
               StepIcon = CheckCircle;
             } else if (isCurrent || isExigencia) {
@@ -204,183 +203,148 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
 
             const stepAttachments = getStepAttachments(step.status);
             const attachmentsCount = stepAttachments.length;
-            const StepContent = (
-              <div className={cn("relative flex flex-col items-center snap-start", isAdmin ? "min-w-[72px] sm:min-w-[90px] md:min-w-[100px] lg:min-w-[120px]" : "min-w-[120px]")}> 
-                {/* Conector à esquerda (não no primeiro) */}
-                {index > 0 && (
-                  <div
-                    className={cn(
-                      "absolute top-8 h-1",
-                      isAdmin ? "left-[-3rem] w-12 sm:left-[-3.5rem] sm:w-14 md:left-[-4rem] md:w-20" : "left-[-4rem] w-16 md:w-24",
-                      isCompleted ? "bg-green-600" : "bg-gray-300"
-                    )}
-                  />
-                )}
 
-                {/* Ícone circular */}
+            const StepNode = (
+              <div className="relative flex flex-col items-center">
                 <div
                   className={cn(
-                    "relative z-10 flex items-center justify-center rounded-full transition-all duration-300",
-                    // Nova lógica de cores conforme especificação
+                    "relative z-10 flex items-center justify-center rounded-full transition-all duration-300 w-10 h-10",
                     isCompleted && "bg-green-600 text-white",
                     (isCurrent || isExigencia) && "bg-red-600 text-white",
                     isPending && "bg-gray-400 text-gray-700",
-                    "w-10 h-10"
                   )}
                 >
                   <StepIcon className="w-5 h-5" />
                 </div>
-
-                {/* Título e meta */}
                 <div className="mt-2 text-center">
-                  <h4
-                    className={cn(
-                      "font-medium text-sm",
-                      "text-gray-800"
-                    )}
-                  >
-                    {step.label}
-                  </h4>
+                  <h4 className="font-medium text-sm text-gray-800">{step.label}</h4>
                   <p className={cn(
                     "text-xs mt-1",
                     isCompleted && "text-green-700",
-                    (isCurrent || isExigencia) && "text-red-700", 
+                    (isCurrent || isExigencia) && "text-red-700",
                     isPending && "text-gray-500"
                   )}>
                     {isCompleted && "✅ Concluída"}
                     {(isCurrent || isExigencia) && "🔴 Em andamento"}
                     {isPending && "⚪ Pendente"}
                   </p>
-
                   {attachmentsCount > 0 && (
                     <p className="text-[11px] text-muted-foreground mt-1 inline-flex items-center">
                       <Paperclip className="w-3 h-3 mr-1" /> {attachmentsCount} anexo(s)
                     </p>
                   )}
                 </div>
-
-                {/* Conector à direita (não no último) */}
-                {index < timelineSteps.length - 1 && (
-                  <div
-                    className={cn(
-                      "absolute right-[-4rem] top-8 h-1 w-16 md:w-24",
-                      // segment fica verde se esta etapa estiver concluída
-                      isCompleted ? "bg-green-600" : "bg-gray-300"
-                    )}
-                  />
-                )}
               </div>
             );
 
-            // Se houver histórico ou anexos da etapa, torna clicável para abrir o diálogo
-            if (stepHistory.length > 0 || attachmentsCount > 0) {
-              return (
-                <Dialog key={step.status}>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <DialogTrigger asChild>
-                          <div className="cursor-pointer hover:opacity-90 transition" onClick={() => onSelectStage?.(step.status)}>
-                            {StepContent}
-                          </div>
-                        </DialogTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-sm">{tooltipText}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{step.label}</DialogTitle>
-                      <DialogDescription>Detalhes desta etapa</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 max-h-96 overflow-y-auto">
-                      {stepHistory.map((h) => (
-                        <div key={h.id} className="border-l-2 border-primary pl-4 py-2">
-                          <p className="text-sm font-medium">
-                            {new Date(h.created_at).toLocaleDateString("pt-BR")} às {new Date(h.created_at).toLocaleTimeString("pt-BR")}
-                          </p>
-                          {h.responsible_name && (
-                            <p className="text-sm text-muted-foreground">
-                              Responsável: {h.responsible_name}
-                            </p>
-                          )}
-                          <p className="text-sm mt-2">
-                            Status: <span className="font-medium">{formatStepStatus(h.step_status)}</span>
-                          </p>
-                          {h.observations && (
-                            <div className="mt-2 p-2 bg-muted rounded text-sm">
-                              {h.observations}
-                            </div>
-                          )}
+            const NodeWithDialog = (stepHistory.length > 0 || attachmentsCount > 0) ? (
+              <Dialog key={step.status}>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DialogTrigger asChild>
+                        <div className="cursor-pointer hover:opacity-90 transition" onClick={() => onSelectStage?.(step.status)}>
+                          {StepNode}
                         </div>
-                      ))}
-                      {attachmentsCount > 0 && (
-                        <div className="pt-2">
-                          <h4 className="text-sm font-semibold mb-2 flex items-center"><Paperclip className="w-4 h-4 mr-1" /> Anexos desta etapa</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {stepAttachments.map((doc) => (
-                              <div key={doc.id} className="border rounded p-2">
-                                <div className="aspect-video bg-muted rounded flex items-center justify-center overflow-hidden">
-                                  {doc.document_type === "imagem" || doc.file_url.match(/\.(png|jpe?g)$/i) ? (
-                                    <Button variant="ghost" size="icon" onClick={() => onPreviewDoc && onPreviewDoc(doc)}>
-                                      <ImageIcon className="w-8 h-8 text-muted-foreground" />
-                                    </Button>
-                                  ) : (doc.document_type === "pdf" || doc.file_url.endsWith(".pdf")) ? (
-                                    <Button variant="ghost" size="icon" onClick={() => onPreviewDoc && onPreviewDoc(doc)}>
-                                      <FileText className="w-8 h-8 text-muted-foreground" />
-                                    </Button>
-                                  ) : (
-                                    <FileIcon className="w-8 h-8 text-muted-foreground" />
-                                  )}
-                                </div>
-                                <div className="mt-2">
-                                  <p className="text-xs font-medium truncate">{doc.document_name}</p>
-                                  <p className="text-xs text-muted-foreground capitalize">{doc.status}</p>
-                                  <div className="mt-1 flex items-center gap-2">
-                                    {onPreviewDoc && (
-                                      <Button variant="ghost" size="sm" onClick={() => onPreviewDoc(doc)}>
-                                        <Eye className="w-3 h-3 mr-1" /> Ver
-                                      </Button>
-                                    )}
-                                    {onDownloadDoc && (
-                                      <Button variant="ghost" size="sm" onClick={() => onDownloadDoc(doc)}>
-                                        <Download className="w-3 h-3 mr-1" /> Baixar
-                                      </Button>
-                                    )}
-                                  </div>
-                                  {doc.carimbado_por && (
-                                    <p className="text-[11px] text-muted-foreground mt-1">Carimbado por: {doc.carimbado_por}</p>
-                                  )}
-                                  {doc.data_carimbo && (
-                                    <p className="text-[11px] text-muted-foreground">Liberado em: {new Date(doc.data_carimbo).toLocaleString("pt-BR")}</p>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
+                      </DialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-[280px] text-xs">{tooltipText}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Etapa: {step.label}</DialogTitle>
+                    <DialogDescription>
+                      {isAdmin ? tooltipTextAdmin[step.status] : tooltipTextUser[step.status]}
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  {/* Histórico */}
+                  {stepHistory.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      <h4 className="font-semibold">Histórico</h4>
+                      <div className="space-y-2">
+                        {stepHistory.map((h) => (
+                          <div key={h.id} className="p-2 border rounded">
+                            <p className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString("pt-BR")}</p>
+                            <p className="text-sm font-medium">{h.step_status.replace("_", " ")}</p>
+                            {h.observations && (
+                              <p className="text-sm mt-1">{h.observations}</p>
+                            )}
                           </div>
-                        </div>
-                      )}
+                        ))}
+                      </div>
                     </div>
-                  </DialogContent>
-                </Dialog>
-              );
-            }
+                  )}
+
+                  {/* Anexos relevantes */}
+                  {attachmentsCount > 0 && (
+                    <div className="mt-6 space-y-3">
+                      <h4 className="font-semibold">Anexos desta etapa</h4>
+                      <div className="space-y-2">
+                        {stepAttachments.map((doc) => (
+                          <div key={doc.id} className="p-2 border rounded flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {doc.document_type === "certificado_final" ? (
+                                <FileText className="w-4 h-4" />
+                              ) : (
+                                doc.document_type.match(/png|jpg|jpeg|gif/) ? (
+                                  <ImageIcon className="w-4 h-4" />
+                                ) : (
+                                  <FileIcon className="w-4 h-4" />
+                                )
+                              )}
+                              <div>
+                                <p className="text-sm font-medium">{doc.document_name}</p>
+                                <p className="text-xs text-muted-foreground">{formatStepStatus(doc.status)}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {onPreviewDoc && (
+                                <Button variant="outline" size="sm" onClick={() => onPreviewDoc(doc)}>
+                                  <Eye className="w-4 h-4 mr-1" /> Ver
+                                </Button>
+                              )}
+                              {onDownloadDoc && (
+                                <Button variant="outline" size="sm" onClick={() => onDownloadDoc(doc)}>
+                                  <Download className="w-4 h-4 mr-1" /> Baixar
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
+            ) : (
+              <div key={step.status} className="cursor-default">
+                {StepNode}
+              </div>
+            );
 
             return (
-              <TooltipProvider key={step.status}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div onClick={() => onSelectStage?.(step.status)}>
-                      {StepContent}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-sm">{tooltipText}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <div key={step.status} className="flex-1 flex items-center">
+                {NodeWithDialog}
+
+                {index < timelineSteps.length - 1 && (
+                  <div className="h-[3px] flex-1 bg-gray-300 mx-2 relative">
+                    <div
+                      className={cn(
+                        "absolute left-0 top-0 bottom-0 transition-all duration-300",
+                        index < resolvedActiveIndex && "bg-green-600",
+                        index === resolvedActiveIndex && "bg-red-600",
+                        index > resolvedActiveIndex && "bg-gray-300",
+                      )}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -389,6 +353,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   );
 };
 
+// Tooltips informativos (texto)
 const tooltipTextUser: Record<ProcessStatus, string> = {
   cadastro: "Etapa inicial: dados enviados e aguardando pagamento.",
   triagem: "Análise documental e técnica preliminar.",

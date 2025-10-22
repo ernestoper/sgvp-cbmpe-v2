@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProcessTimeline } from "@/components/ProcessTimeline";
 import { useRole } from "@/hooks/useRole";
-import { DocumentUpload } from "@/components/DocumentUpload";
+
 import type { ProcessStatus, StepStatus } from "@/types/database";
 import {
   Dialog,
@@ -247,7 +247,9 @@ const DetalheProcessoAdmin = () => {
     )
     || (currentStage === "aprovacao" && (hasFinalCertificate || approvedByStampHistory))
   );
-  const canAdvancePhase = stageApproved && process?.current_status !== "concluido";
+  // Nova regra: avançar etapa somente quando todos os documentos da etapa atual estiverem aprovados
+  const allDocsApprovedCurrent = (stageDocsCurrent.length > 0) && (pendingCountCurrent === 0 && rejectedCountCurrent === 0);
+  const canAdvancePhase = allDocsApprovedCurrent && process?.current_status !== "concluido";
 
   // Etapa ativa para ações de documentos durante exigência (usa última etapa do histórico)
   const stageStatuses: ProcessStatus[] = ["cadastro","triagem","vistoria","comissao","aprovacao","concluido"];
@@ -805,12 +807,13 @@ const DetalheProcessoAdmin = () => {
 
     setProcessing(true);
     try {
-      // Exige aprovação explícita da etapa atual
-      if (!stageApproved) {
-        console.log('Stage not approved yet');
+      // Nova regra: exige que todos os documentos da etapa atual estejam aprovados
+      const docsOk = (stageDocsCurrent.length > 0) && (pendingCountCurrent === 0 && rejectedCountCurrent === 0);
+      if (!docsOk) {
+        console.log('Documents not fully approved yet');
         toast({
-          title: "Etapa não aprovada",
-          description: "Aprove a etapa atual para liberar o avanço.",
+          title: "Documentos pendentes",
+          description: "Aguarde a aprovação de todos os documentos para avançar.",
           variant: "destructive",
         });
         setProcessing(false);
@@ -821,7 +824,7 @@ const DetalheProcessoAdmin = () => {
       await dynamodb.processes.update(id!, { current_status: newStatus });
       console.log('Update result: success');
 
-      await addToHistory("completed", observations || `Etapa ${stepLabels[currentStage as ProcessStatus]} aprovada e avançada para ${stepLabels[newStatus]}`);
+      await addToHistory("completed", observations || `Etapa ${stepLabels[currentStage as ProcessStatus]} avançada para ${stepLabels[newStatus]}`);
 
       // Dispara notificações de aprovação de etapa com próxima etapa
       try {
@@ -1504,15 +1507,7 @@ const DetalheProcessoAdmin = () => {
                     </Button>
                   </div>
                 )}
-                {!stageApproved && process.current_status !== "concluido" && (
-                  <Button 
-                    className="w-full mb-2"
-                    onClick={handleApproveStage}
-                    disabled={processing || !canApproveStage}
-                  >
-                    <ShieldCheck className="w-4 h-4 mr-2" /> Aprovar Etapa Atual
-                  </Button>
-                )}
+
                 {canAdvancePhase && process.current_status !== "concluido" ? (
                   <Button 
                     className="w-full"
@@ -1550,7 +1545,7 @@ const DetalheProcessoAdmin = () => {
                           <p className="font-medium">Próxima etapa ainda não habilitada</p>
                         ) : (
                           <>
-                            <p className="font-medium">Aprove a etapa para liberar o avanço</p>
+                            <p className="font-medium">Aguarde a aprovação de todos os documentos para liberar o avanço</p>
                             <p className="text-xs text-muted-foreground mt-1">
                               {pendingCountCurrent > 0 && `${pendingCountCurrent} pendente(s)`}
                               {pendingCountCurrent > 0 && rejectedCountCurrent > 0 && " • "}
@@ -1563,11 +1558,7 @@ const DetalheProcessoAdmin = () => {
                   </TooltipProvider>
                 )}
                 
-                {(!stageApproved && canApproveStage && process.current_status !== "concluido") && (
-                  <p className="text-xs text-green-600 dark:text-green-400 text-center p-2 bg-green-50 dark:bg-green-950/20 rounded">
-                    ✨ Etapa pronta para aprovação. Clique em "Aprovar Etapa".
-                  </p>
-                )}
+
                 
                 {(pendingCountCurrent > 0 || rejectedCountCurrent > 0) && (
                   <p className="text-xs text-muted-foreground text-center p-2 bg-muted/50 rounded">
@@ -1713,43 +1704,7 @@ const DetalheProcessoAdmin = () => {
             </Card>
           </div>
 
-            {/* Upload de Documentos */}
-            <DocumentUpload
-              processId={id!}
-              onUploadComplete={async (fileUrl, fileName) => {
-                // Criar registro do documento no DynamoDB
-                try {
-                  console.log('Saving document to DynamoDB:', { fileUrl, fileName });
-                  
-                  await dynamodb.documents.create({
-                    process_id: id!,
-                    document_name: fileName,
-                    document_type: 'Documento Geral',
-                    file_url: fileUrl,
-                    status: 'pending',
-                    rejection_reason: null,
-                    stage: process?.current_status || 'cadastro',
-                  });
-                  
-                  console.log('Document saved successfully');
-                  
-                  // Recarregar documentos
-                  await fetchDocuments();
-                  
-                  toast({
-                    title: 'Documento adicionado!',
-                    description: 'O documento foi enviado e está aguardando análise.',
-                  });
-                } catch (error: any) {
-                  console.error('Error saving document:', error);
-                  toast({
-                    title: 'Erro ao salvar documento',
-                    description: error.message,
-                    variant: 'destructive',
-                  });
-                }
-              }}
-            />
+            {/* Bloco de envio removido conforme solicitação */}
         </div>
       </main>
 
