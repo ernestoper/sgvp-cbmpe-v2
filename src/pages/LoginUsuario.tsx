@@ -296,6 +296,22 @@ const LoginUsuario = () => {
             Portal do Cidadão
           </h2>
 
+          {/* Credenciais de Teste */}
+          <Card className="p-4 bg-blue-50 border-blue-200 mb-4">
+            <div className="text-sm space-y-2">
+              <p className="font-semibold text-blue-900 flex items-center gap-2">
+                🔑 Credenciais de Teste
+              </p>
+              <div className="text-blue-800 space-y-1 font-mono">
+                <p><strong>E-mail:</strong> teste@teste.com</p>
+                <p><strong>Senha:</strong> 123456</p>
+              </div>
+              <p className="text-xs text-blue-700 mt-2">
+                💡 Use essas credenciais para testar o sistema
+              </p>
+            </div>
+          </Card>
+
           <Card className="p-6 bg-white">
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
