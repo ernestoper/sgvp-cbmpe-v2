@@ -228,6 +228,10 @@ const DetalheProcessoAdmin = () => {
   const approvedCountSelected = selectedStageDocs.filter(d => d.status === "completed").length;
   const pendingCountSelected = selectedStageDocs.filter(d => d.status === "pending").length;
   const rejectedCountSelected = selectedStageDocs.filter(d => d.status === "rejected").length;
+  // Contadores gerais, refletindo o bloco "Documentos" (todos os documentos do processo)
+  const approvedCountAll = documents.filter(d => d.status === "completed").length;
+  const pendingCountAll = documents.filter(d => d.status === "pending").length;
+  const rejectedCountAll = documents.filter(d => d.status === "rejected").length;
   // Documentos da etapa atual do processo (para lógica de aprovação de etapa)
   const stageDocsCurrent = documents.filter(d => (d.stage || "cadastro") === currentStage);
   const pendingCountCurrent = stageDocsCurrent.filter(d => d.status === "pending").length;
@@ -258,6 +262,11 @@ const DetalheProcessoAdmin = () => {
   const lastStageInHistory = [...history].reverse().find(h => stageStatuses.includes(h.status as ProcessStatus))?.status as ProcessStatus | undefined;
   const activeStageForActions: ProcessStatus = currentStage === "exigencia" ? (lastStageInHistory || "triagem") : currentStage;
   const isTriagemActions = activeStageForActions === "triagem";
+  // Contadores para a etapa ativa (triagem ou última etapa em exigência)
+  const docsForActiveStage = documents.filter(d => (d.stage || "cadastro") === activeStageForActions);
+  const approvedCountActive = docsForActiveStage.filter(d => d.status === "completed").length;
+  const pendingCountActive = docsForActiveStage.filter(d => d.status === "pending").length;
+  const rejectedCountActive = docsForActiveStage.filter(d => d.status === "rejected").length;
 
   // Recalcula e atualiza o status geral do processo com base nos documentos da etapa ativa
   const recalcAndUpdateProcessStatus = async () => {
@@ -1186,19 +1195,19 @@ const DetalheProcessoAdmin = () => {
             <Card className="p-4 rounded-2xl shadow-md bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-green-700 dark:text-green-400">✅ Aprovados</span>
-                <span className="text-xl font-bold text-green-700 dark:text-green-400">{approvedCountSelected}</span>
+                <span className="text-xl font-bold text-green-700 dark:text-green-400">{approvedCountAll}</span>
               </div>
             </Card>
             <Card className="p-4 rounded-2xl shadow-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">⏳ Pendentes</span>
-                <span className="text-xl font-bold text-yellow-700 dark:text-yellow-400">{pendingCountSelected}</span>
+                <span className="text-xl font-bold text-yellow-700 dark:text-yellow-400">{pendingCountAll}</span>
               </div>
             </Card>
             <Card className="p-4 rounded-2xl shadow-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-red-700 dark:text-red-400">❌ Reprovados</span>
-                <span className="text-xl font-bold text-red-700 dark:text-red-400">{rejectedCountSelected}</span>
+                <span className="text-xl font-bold text-red-700 dark:text-red-400">{rejectedCountAll}</span>
               </div>
             </Card>
           </div>
