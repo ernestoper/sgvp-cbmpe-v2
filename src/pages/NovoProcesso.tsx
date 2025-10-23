@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Shield, ArrowLeft, Building2, FileText, MapPin, Loader2, User, Phone, Mail, Plus, QrCode, CheckCircle, Upload, Eye, Trash2, Image as ImageIcon, File as FileIcon } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import { AppHeaderLogo } from "@/components/AppHeaderLogo";
@@ -1136,7 +1143,7 @@ const NovoProcesso = () => {
 
   const normalizePhoneDigits = (input: string) => input.replace(/\D/g, "");
 
-  const sendWhatsAppNotification = async (phone: string, processNumber: string, companyName: string, contactName: string) => {
+  const sendWhatsAppNotification = async (phone: string, processNumber: string, companyName: string, contactName: string, boletoLink?: string) => {
     console.log("📱 === ENVIANDO WHATSAPP ===");
     console.log("Telefone:", phone);
     console.log("Processo:", processNumber);
@@ -1150,6 +1157,8 @@ const NovoProcesso = () => {
         console.log("⚠️ Configuração do WhatsApp não encontrada, pulando envio");
         return;
       }
+
+      const boletoLine = boletoLink ? `\n💳 *Link de Pagamento:* ${boletoLink}\n` : "";
 
       const message = `🔥 *CBM-PE - Processo Criado* 🔥
 
@@ -1165,8 +1174,7 @@ Seu processo foi criado com sucesso:
 • Envie os documentos obrigatórios
 • Acompanhe o status pelo sistema
 • Aguarde o agendamento da vistoria
-
-🌐 *Acesse:* ${window.location.origin}/processo/${processNumber}
+${boletoLine}🌐 *Acesse:* ${window.location.origin}/processo/${processNumber}
 
 *Corpo de Bombeiros Militar de Pernambuco*
 _Sistema SGVP - Gestão de Vistorias_`;
@@ -1439,7 +1447,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
       }
 
       // Enviar WhatsApp de confirmação
-      await sendWhatsAppNotification(phoneDigits, processNumber, companyName, contactName.trim());
+      await sendWhatsAppNotification(phoneDigits, processNumber, companyName, contactName.trim(), boletoUrl || undefined);
 
       toast({
         title: "Processo criado!",
@@ -1967,25 +1975,27 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <h4 className="text-base font-medium">🏙️ Escolha a cidade onde está localizado o seu estabelecimento</h4>
                 <p className="text-sm text-muted-foreground">Selecione abaixo a cidade correspondente à localização do seu imóvel ou empresa.</p>
 
-                <div className="space-y-2">
+                <div className="space-y-2 rounded-xl border-2 border-blue-300/70 bg-blue-50/60 p-4">
                   <Label htmlFor="cidadeEstabelecimento">Cidade do estabelecimento *</Label>
-                  <select
-                    id="cidadeEstabelecimento"
-                    className="border rounded-md h-9 px-2 bg-background text-sm"
-                    value={cidadeEstabelecimento}
-                    onChange={(e) => setCidadeEstabelecimento(e.target.value)}
-                    required
-                  >
-                    <option value="">Selecione uma cidade...</option>
-                    <option value="Recife">Recife</option>
-                    <option value="Olinda">Olinda</option>
-                    <option value="Jaboatão dos Guararapes">Jaboatão dos Guararapes</option>
-                    <option value="Paulista">Paulista</option>
-                    <option value="Camaragibe">Camaragibe</option>
-                    <option value="Cabo de Santo Agostinho">Cabo de Santo Agostinho</option>
-                    <option value="Igarassu">Igarassu</option>
-                    <option value="Abreu e Lima">Abreu e Lima</option>
-                  </select>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-blue-600" />
+                    <Select value={cidadeEstabelecimento} onValueChange={(v) => setCidadeEstabelecimento(v)}>
+                      <SelectTrigger className="pl-10 h-10 text-sm border-2 border-blue-300 focus:ring-blue-500">
+                        <SelectValue placeholder="Selecione uma cidade..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Recife">Recife</SelectItem>
+                        <SelectItem value="Olinda">Olinda</SelectItem>
+                        <SelectItem value="Jaboatão dos Guararapes">Jaboatão dos Guararapes</SelectItem>
+                        <SelectItem value="Paulista">Paulista</SelectItem>
+                        <SelectItem value="Camaragibe">Camaragibe</SelectItem>
+                        <SelectItem value="Cabo de Santo Agostinho">Cabo de Santo Agostinho</SelectItem>
+                        <SelectItem value="Igarassu">Igarassu</SelectItem>
+                        <SelectItem value="Abreu e Lima">Abreu e Lima</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-blue-700">Obrigatório para calcular a DAM 20.</p>
                 </div>
               </div>
             )}
@@ -1996,7 +2006,8 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <h3 className="text-sm font-semibold">3. Endereço do Estabelecimento</h3>
                 <p className="text-sm text-muted-foreground">Preencha os campos abaixo com o endereço completo do local para o qual está sendo solicitado o Atestado de Regularidade. Todos os campos marcados com * são obrigatórios.</p>
 
-                <div className="grid md:grid-cols-3 gap-4">
+                <div className="rounded-xl border-2 border-blue-300/70 bg-blue-50/60 p-4 space-y-4">
+                  <div className="grid md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="cep">CEP *</Label>
                     <Input
@@ -2030,23 +2041,20 @@ _Sistema SGVP - Gestão de Vistorias_`;
 
                   <div className="space-y-2 md:col-span-1">
                     <Label htmlFor="cidade">Cidade *</Label>
-                    <select
-                      id="cidade"
-                      className="border rounded-md h-10 px-3 bg-background"
-                      value={cidade}
-                      onChange={(e) => {
-                        const name = e.target.value;
-                        setCidade(name);
-                        const found = municipios.find((m) => m.nome === name);
-                        setIbgeMunicipioId(found?.id ?? null);
-                      }}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      {municipios.map((m) => (
-                        <option key={m.id} value={m.nome}>{m.nome}</option>
-                      ))}
-                    </select>
+                    <Select value={cidade} onValueChange={(name) => {
+                      setCidade(name);
+                      const found = municipios.find((m) => m.nome === name);
+                      setIbgeMunicipioId(found?.id ?? null);
+                    }}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {municipios.map((m) => (
+                          <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -2079,21 +2087,20 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <div className="grid md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="tipoLogradouro">Tipo de logradouro</Label>
-                    <select
-                      id="tipoLogradouro"
-                      className="border rounded-md h-10 px-3 bg-background"
-                      value={tipoLogradouro}
-                      onChange={(e) => setTipoLogradouro(e.target.value)}
-                    >
-                      <option value="">Selecione</option>
-                      <option value="Rua">Rua</option>
-                      <option value="Avenida">Avenida</option>
-                      <option value="Travessa">Travessa</option>
-                      <option value="Rodovia">Rodovia</option>
-                      <option value="Praça">Praça</option>
-                      <option value="Estrada">Estrada</option>
-                      <option value="Alameda">Alameda</option>
-                    </select>
+                    <Select value={tipoLogradouro} onValueChange={(v) => setTipoLogradouro(v)}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Rua">Rua</SelectItem>
+                        <SelectItem value="Avenida">Avenida</SelectItem>
+                        <SelectItem value="Travessa">Travessa</SelectItem>
+                        <SelectItem value="Rodovia">Rodovia</SelectItem>
+                        <SelectItem value="Praça">Praça</SelectItem>
+                        <SelectItem value="Estrada">Estrada</SelectItem>
+                        <SelectItem value="Alameda">Alameda</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="pontoReferencia">Ponto de referência</Label>
@@ -2123,7 +2130,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
 
                 <div className="space-y-2">
                   <Label>Possui acesso público</Label>
-                  <div className="flex items-center gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <label className="flex items-center gap-2">
                       <input type="radio" name="acessoPublico" value="sim" checked={acessoPublico === 'sim'} onChange={() => setAcessoPublico('sim')} />
                       <span>Sim</span>
@@ -2143,24 +2150,22 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <div className="grid md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="tipoImovel">Tipo de imóvel *</Label>
-                    <select
-                      id="tipoImovel"
-                      className="border rounded-md h-10 px-3 bg-background"
-                      value={tipoImovel}
-                      onChange={(e) => setTipoImovel(e.target.value as any)}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      <option value="residencial">Residencial</option>
-                      <option value="comercial">Comercial</option>
-                      <option value="industrial">Industrial</option>
-                      <option value="misto">Misto</option>
-                      <option value="outro">Outro</option>
-                    </select>
+                    <Select value={tipoImovel} onValueChange={(v) => setTipoImovel(v as any)}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="residencial">Residencial</SelectItem>
+                        <SelectItem value="comercial">Comercial</SelectItem>
+                        <SelectItem value="industrial">Industrial</SelectItem>
+                        <SelectItem value="misto">Misto</SelectItem>
+                        <SelectItem value="outro">Outro</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label>Possui edificação em mais de 1 pavimento?</Label>
-                    <div className="flex items-center gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <label className="flex items-center gap-2">
                         <input type="radio" name="multiPav" value="sim" checked={multiPavimentos === 'sim'} onChange={() => setMultiPavimentos('sim')} />
                         <span>Sim</span>
@@ -2181,6 +2186,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <div className="bg-muted/30 border border-muted-foreground/20 rounded-lg p-3 text-xs text-muted-foreground">
                   IBGE: {ibgeMunicipioId ? `Município ${ibgeMunicipioId}` : '—'} • UF: {uf || '—'} • CEP: {cep || '—'}
                 </div>
+                </div>
               </div>
             )}
 
@@ -2190,22 +2196,21 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <h3 className="text-sm font-semibold">4. Memorial Preliminar</h3>
                 <p className="text-sm text-muted-foreground">Informe os dados técnicos referentes ao condomínio, ocupação e estrutura física do estabelecimento. Os campos marcados com * são de preenchimento obrigatório.</p>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="rounded-xl border-2 border-blue-300/70 bg-blue-50/60 p-4 space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="riscoOcupacao">Risco da Ocupação *</Label>
-                    <select
-                      id="riscoOcupacao"
-                      className="border rounded-md h-10 px-3 bg-background"
-                      value={riscoOcupacao}
-                      onChange={(e) => setRiscoOcupacao(e.target.value)}
-                      required
-                    >
-                      <option value="">Selecione</option>
-                      <option value="COMERCIAL">COMERCIAL</option>
-                      <option value="INDUSTRIAL">INDUSTRIAL</option>
-                      <option value="RESIDENCIAL">RESIDENCIAL</option>
-                      <option value="PÚBLICA">PÚBLICA</option>
-                    </select>
+                    <Select value={riscoOcupacao} onValueChange={(v) => setRiscoOcupacao(v)}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="COMERCIAL">COMERCIAL</SelectItem>
+                        <SelectItem value="INDUSTRIAL">INDUSTRIAL</SelectItem>
+                        <SelectItem value="RESIDENCIAL">RESIDENCIAL</SelectItem>
+                        <SelectItem value="PÚBLICA">PÚBLICA</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="areaTotalConstruida">Área Construída Declarada (m²) *</Label>
@@ -2215,7 +2220,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
 
                 <div className="space-y-2">
                   <Label>É condomínio? *</Label>
-                  <div className="flex items-center gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <label className="flex items-center gap-2">
                       <input type="radio" name="condominio" value="sim" checked={isCondominio === 'sim'} onChange={() => setIsCondominio('sim')} required />
                       <span>Sim</span>
@@ -2256,7 +2261,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
 
                 <div className="space-y-2">
                   <Label>Tem central de gás (GLP) instalada? *</Label>
-                  <div className="flex items-center gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <label className="flex items-center gap-2">
                       <input type="radio" name="glp" value="sim" checked={centralGLPInstalada === 'sim'} onChange={() => setCentralGLPInstalada('sim')} required />
                       <span>Sim</span>
@@ -2274,7 +2279,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
                       </div>
                       <div className="space-y-2">
                         <Label>O ponto de gás existe?</Label>
-                        <div className="flex items-center gap-4">
+                        <div className="grid grid-cols-2 gap-4">
                           <label className="flex items-center gap-2">
                             <input type="radio" name="pontoGas" value="sim" checked={pontoGasExiste === 'sim'} onChange={() => setPontoGasExiste('sim')} />
                             <span>Sim</span>
@@ -2292,7 +2297,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Trabalha com explosivos ou produtos perigosos? *</Label>
-                    <div className="flex items-center gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <label className="flex items-center gap-2">
                         <input type="radio" name="explosivos" value="sim" checked={trabalhaExplosivos === 'sim'} onChange={() => setTrabalhaExplosivos('sim')} required />
                         <span>Sim</span>
@@ -2305,7 +2310,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
                   </div>
                   <div className="space-y-2">
                     <Label>Existe sistema fixo? *</Label>
-                    <div className="flex items-center gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <label className="flex items-center gap-2">
                         <input type="radio" name="sistemaFixo" value="sim" checked={existeSistemaFixo === 'sim'} onChange={() => setExisteSistemaFixo('sim')} required />
                         <span>Sim</span>
@@ -2331,6 +2336,7 @@ _Sistema SGVP - Gestão de Vistorias_`;
 
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-900">
                   Se não possuir projeto de segurança aprovado, deverá providenciar a confecção do projeto de segurança do estabelecimento e voltar ao portal...
+                </div>
                 </div>
               </div>
             )}

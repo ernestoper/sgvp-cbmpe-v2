@@ -79,7 +79,8 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   const activeStage: ProcessStatus = currentStatus === "exigencia" ? "triagem" : currentStatus;
   const activeIndex = timelineSteps.findIndex((step) => step.status === activeStage);
   const hasExigencia = currentStatus === "exigencia";
-  const resolvedActiveIndex = activeIndex === -1 ? (timelineSteps.length - 1) : activeIndex;
+  // Fallback para status desconhecidos (ex.: 'aguardando_pagamento'): começar na etapa inicial
+  const resolvedActiveIndex = activeIndex === -1 ? 0 : activeIndex;
   const isConcludedProcess = currentStatus === "concluido";
 
   const isMobile = useIsMobile();
@@ -169,10 +170,11 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
   };
 
   const isAdmin = mode === "admin";
+  const Wrapper: any = isAdmin ? Card : "div";
 
   return (
-    <Card className={cn("p-6", className)}>
-      <h3 className="text-lg font-semibold mb-6">Timeline do Processo</h3>
+    <Wrapper className={cn(isAdmin ? "p-6" : "w-full", className)}>
+      {isAdmin && (<h3 className="text-lg font-semibold mb-6">Timeline do Processo</h3>)}
 
       {hasExigencia && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
@@ -188,7 +190,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
 
       {/* Timeline horizontal */}
       <div className="w-full">
-        <div className="flex items-center px-2">
+        <div className="flex items-center justify-between gap-4 px-2">
           {visibleSteps.map((step, index) => {
             const globalIndex = timelineSteps.findIndex(s => s.status === step.status);
             const stepStatus = getStepStatus(globalIndex);
@@ -355,7 +357,7 @@ export const ProcessTimeline = ({ currentStatus, history = [], className, mode =
           })}
         </div>
       </div>
-    </Card>
+    </Wrapper>
   );
 }
 

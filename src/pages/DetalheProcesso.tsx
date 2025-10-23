@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { QRCodeSVG } from "qrcode.react";
+import { sendWhatsappMessage } from "@/integrations/notifications";
 
 interface Process {
   id: string;
@@ -929,6 +930,16 @@ const DetalheProcesso = () => {
                         observations: "Pagamento confirmado (simulado). Aguardando envio da documentação.",
                         responsible_name: process?.company_name || "Usuário",
                       } as any);
+                      // Enviar WhatsApp notificando pagamento confirmado
+                      try {
+                        const phoneDigits = String(process?.contact_phone || "").replace(/\D/g, "");
+                        if (phoneDigits.length >= 10) {
+                          const msg = `✅ Pagamento confirmado!\n\n📋 Número do Processo: ${process?.process_number || ''}\n🏢 Empresa: ${process?.company_name || ''}\n📅 Data: ${new Date().toLocaleDateString('pt-BR')}\n\n✅ Próximos passos:\n* Envie os documentos obrigatórios\n* Acompanhe o status pelo sistema\n* Aguarde o agendamento da vistoria\n\n🌐 Acesse: ${window.location.origin}/processo/${process?.process_number || ''}\n\nCorpo de Bombeiros Militar de Pernambuco\nSistema SGVP - Gestão de Vistorias`;
+                          await sendWhatsappMessage(`55${phoneDigits}`, msg);
+                        }
+                      } catch (notifyErr) {
+                        console.warn("Falha ao enviar WhatsApp de pagamento confirmado:", notifyErr);
+                      }
                       await fetchProcess();
                       await fetchHistory();
                       setPaying(false);
